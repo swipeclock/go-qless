@@ -1,4 +1,4 @@
-package goqless
+package qless
 
 import (
 	"fmt"

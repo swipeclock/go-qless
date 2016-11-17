@@ -1,6 +1,6 @@
 // This worker does not model the way qless does it.
 // I more or less modeled it after my own needs.
-package goqless
+package qless
 
 import (
 	"errors"
@@ -17,8 +17,8 @@ func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
 
-type JobFunc func(*Job) error
-type JobCallback func(*Job) error
+type JobFunc func(Job) error
+type JobCallback func(Job) error
 
 type Worker struct {
 	sync.Mutex
@@ -34,7 +34,7 @@ type Worker struct {
 
 func NewWorker(queueAddr string, queueName string, interval int) (*Worker, error) {
 	ipport := strings.Split(queueAddr, ":")
-	client, err := Dial(ipport[0], ipport[1])
+	client, err := Dial(ipport[0], ipport[1], 0)
 	if err != nil {
 		log.Println("Dial err:", err)
 		return nil, errors.New(err.Error())
@@ -54,7 +54,7 @@ func NewWorker(queueAddr string, queueName string, interval int) (*Worker, error
 	return w, nil
 }
 
-func heartbeatStart(job *Job, done chan bool, heartbeat int, l sync.Locker) {
+func heartbeatStart(job Job, done chan bool, heartbeat int, l sync.Locker) {
 	tick := time.NewTicker(time.Duration(heartbeat) * time.Duration(time.Second))
 	for {
 		select {
@@ -67,38 +67,37 @@ func heartbeatStart(job *Job, done chan bool, heartbeat int, l sync.Locker) {
 			l.Unlock()
 			if err != nil {
 				log.Printf("failed HeartbeatWithNoData jid:%v, queue:%v, success:%v, error:%v",
-					job.Jid, job.Queue, success, err)
+					job.JID(), job.Queue(), success, err)
 			} else {
 				log.Printf("warning, slow, HeartbeatWithNoData jid:%v, queue:%v, success:%v",
-					job.Jid, job.Queue, success)
+					job.JID(), job.Queue(), success)
 			}
 		}
 	}
 }
 
 //try our best to complete the job
-func (w *Worker) tryCompleteJob(job *Job) error {
+func (w *Worker) tryCompleteJob(job Job) error {
 	for i := 0; i < 3; i++ {
 		time.Sleep(time.Second)
-		log.Println("tryCompleteJob", job.Jid)
+		log.Println("tryCompleteJob", job.JID())
 		ipport := strings.Split(w.queueAddr, ":")
-		client, err := Dial(ipport[0], ipport[1])
+		client, err := Dial(ipport[0], ipport[1], 0)
 		if err != nil {
 			log.Println("Dial err:", err)
 			continue
 		}
 
-		job.SetClient(client)
 		if _, err := job.CompleteWithNoData(); err != nil {
 			client.Close()
-			log.Println("tryCompleteJob", job.Jid, err)
+			log.Println("tryCompleteJob", job.JID(), err)
 		} else {
 			client.Close()
 			return nil
 		}
 	}
 
-	return errors.New("tryCompleteJob " + job.Jid + " failed")
+	return errors.New("tryCompleteJob " + job.JID() + " failed")
 }
 
 func (w *Worker) Start() error {
@@ -133,13 +132,13 @@ func (w *Worker) Start() error {
 			}
 
 			for i := 0; i < len(jobs); i++ {
-				if len(jobs[i].History) > 2 {
+				if len(jobs[i].History()) > 2 {
 					log.Printf("warning, multiple processed exist %+v\n", jobs[i])
 				}
 				done := make(chan bool)
 				//todo: using seprate connection to send heartbeat
 				go heartbeatStart(jobs[i], done, heartbeat, w)
-				f, ok := w.funcs[jobs[i].Klass]
+				f, ok := w.funcs[jobs[i].Class()]
 				if !ok { //we got a job that not belongs to us
 					done <- false
 					log.Fatalf("got a message not belongs to us, queue %v, job %+v\n", q.Name, jobs[i])
@@ -149,14 +148,14 @@ func (w *Worker) Start() error {
 				err := f(jobs[i])
 				if err != nil {
 					// TODO: probably do something with this
-					log.Println("error: job failed, jid", jobs[i].Jid, "queue", jobs[i].Queue, err.Error())
+					log.Println("error: job failed, jid", jobs[i].JID(), "queue", jobs[i].Queue(), err.Error())
 					w.Lock()
 					success, err := jobs[i].Fail("fail", err.Error())
 					w.Unlock()
 					done <- false
 					if err != nil {
 						log.Printf("fail job:%+v success:%v, error:%v",
-							jobs[i].Jid, success, err)
+							jobs[i].JID(), success, err)
 						return err
 					}
 				} else {
@@ -168,14 +167,14 @@ func (w *Worker) Start() error {
 						err = w.tryCompleteJob(jobs[i])
 						if err != nil {
 							log.Printf("fail job:%+v status:%v, error:%v",
-								jobs[i].Jid, status, err)
+								jobs[i].JID(), status, err)
 						} else {
-							log.Println("retry complete job ", jobs[i].Jid, "ok")
+							log.Println("retry complete job ", jobs[i].JID(), "ok")
 						}
 						return errors.New("restart")
 					} else {
 						if status != "complete" {
-							log.Printf("job:%+v status:%v", jobs[i].Jid, status)
+							log.Printf("job:%+v status:%v", jobs[i].JID(), status)
 						}
 					}
 				}
@@ -203,7 +202,7 @@ func (w *Worker) AddService(name string, rcvr interface{}) error {
 	val := reflect.ValueOf(rcvr)
 	for i := 0; i < typ.NumMethod(); i++ {
 		method := typ.Method(i)
-		w.AddFunc(name+"."+method.Name, func(job *Job) error {
+		w.AddFunc(name+"."+method.Name, func(job Job) error {
 			ret := method.Func.Call([]reflect.Value{val, reflect.ValueOf(job)})
 			if len(ret) > 0 {
 				if err, ok := ret[0].Interface().(error); ok {

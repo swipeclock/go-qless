@@ -1,4 +1,4 @@
-package goqless
+package qless
 
 import (
 	"encoding/json"
@@ -19,38 +19,21 @@ type Client struct {
 	port string
 
 	events *Events
-	lua    *Lua
+	lua    *redis.Script
 }
 
-func NewClient(host, port string) *Client {
-	return &Client{host: host, port: port}
-}
-
-func Dial(host, port string) (*Client, error) {
-	c := NewClient(host, port)
-
-	conn, err := redis.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
+func Dial(host, port string, db int) (*Client, error) {
+	conn, err := redis.Dial("tcp", fmt.Sprintf("%s:%s", host, port), redis.DialDatabase(db))
 	if err != nil {
 		return nil, err
 	}
 
-	c.lua = NewLua(conn)
-	dir, err := GetCurrentDir()
-	if err != nil {
-		println(err.Error())
-		conn.Close()
-		return nil, err
-	}
-	//println(dir + "/qless-core")
-	err = c.lua.LoadScripts(dir + "/qless-core") // make get from lib path
-	if err != nil {
-		println(err.Error())
-		conn.Close()
-		return nil, err
-	}
-
-	c.conn = conn
-	return c, nil
+	return &Client{
+		host: host,
+		port: port,
+		lua:  redis.NewScript(0, qlessLua),
+		conn: conn,
+	}, nil
 }
 
 func (c *Client) Close() {
@@ -65,8 +48,8 @@ func (c *Client) Events() *Events {
 	return c.events
 }
 
-func (c *Client) Do(name string, keysAndArgs ...interface{}) (interface{}, error) {
-	return c.lua.Do(name, keysAndArgs...)
+func (c *Client) Do(args ...interface{}) (interface{}, error) {
+	return c.lua.Do(c.conn, args...)
 }
 
 func (c *Client) Queue(name string) *Queue {
@@ -76,12 +59,12 @@ func (c *Client) Queue(name string) *Queue {
 }
 
 func (c *Client) Queues(name string) ([]*Queue, error) {
-	args := []interface{}{0, "queues", timestamp()}
+	args := []interface{}{"queues", timestamp()}
 	if name != "" {
 		args = append(args, name)
 	}
 
-	byts, err := redis.Bytes(c.Do("qless", args...))
+	byts, err := redis.Bytes(c.Do(args...))
 	if err != nil {
 		return nil, err
 	}
@@ -105,17 +88,17 @@ func (c *Client) Queues(name string) ([]*Queue, error) {
 
 // Track the jid
 func (c *Client) Track(jid string) (bool, error) {
-	return Bool(c.Do("qless", 0, "track", timestamp(), "track", jid, ""))
+	return Bool(c.Do("track", timestamp(), "track", jid, ""))
 }
 
 // Untrack the jid
 func (c *Client) Untrack(jid string) (bool, error) {
-	return Bool(c.Do("qless", 0, "track", timestamp(), 0, "untrack", jid))
+	return Bool(c.Do("track", timestamp(), 0, "untrack", jid))
 }
 
 // Returns all the tracked jobs
 func (c *Client) Tracked() (string, error) {
-	return redis.String(c.Do("qless", 0, "track", timestamp()))
+	return redis.String(c.Do("track", timestamp()))
 }
 
 func (c *Client) Get(jid string) (interface{}, error) {
@@ -127,22 +110,22 @@ func (c *Client) Get(jid string) (interface{}, error) {
 	return job, err
 }
 
-func (c *Client) GetJob(jid string) (*Job, error) {
-	byts, err := redis.Bytes(c.Do("qless", 0, "get", timestamp(), jid))
+func (c *Client) GetJob(jid string) (Job, error) {
+	byts, err := redis.Bytes(c.Do("get", timestamp(), jid))
 	if err != nil {
 		return nil, err
 	}
 
-	job := NewJob(c)
-	err = json.Unmarshal(byts, job)
+	var d jobData
+	err = json.Unmarshal(byts, d)
 	if err != nil {
 		return nil, err
 	}
-	return job, err
+	return &job{&d, c}, err
 }
 
 func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {
-	byts, err := redis.Bytes(c.Do("qless", 0, "recur", timestamp(), "get", jid))
+	byts, err := redis.Bytes(c.Do("recur", timestamp(), "get", jid))
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +139,7 @@ func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {
 }
 
 func (c *Client) Completed(start, count int) ([]string, error) {
-	reply, err := redis.Values(c.Do("qless", 0, "jobs", timestamp(), "complete"))
+	reply, err := redis.Values(c.Do("jobs", timestamp(), "complete"))
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +153,7 @@ func (c *Client) Completed(start, count int) ([]string, error) {
 }
 
 func (c *Client) Tagged(tag string, start, count int) (*TaggedReply, error) {
-	byts, err := redis.Bytes(c.Do("qless", 0, "tag", timestamp(), "get", tag, start, count))
+	byts, err := redis.Bytes(c.Do("tag", timestamp(), "get", tag, start, count))
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +164,7 @@ func (c *Client) Tagged(tag string, start, count int) (*TaggedReply, error) {
 }
 
 func (c *Client) GetConfig(option string) (string, error) {
-	interf, err := c.Do("qless", 0, "config.get", timestamp(), option)
+	interf, err := c.Do("config.get", timestamp(), option)
 	if err != nil {
 		return "", err
 	}
@@ -207,12 +190,12 @@ func (c *Client) GetConfig(option string) (string, error) {
 }
 
 func (c *Client) SetConfig(option string, value interface{}) {
-	intf, err := c.Do("qless", 0, "config.set", timestamp(), option, value)
+	intf, err := c.Do("config.set", timestamp(), option, value)
 	if err != nil {
 		fmt.Println("setconfig, c.Do fail. interface:", intf, " err:", err)
 	}
 }
 
 func (c *Client) UnsetConfig(option string) {
-	c.Do("qless", 0, "config.unset", timestamp(), option)
+	c.Do("config.unset", timestamp(), option)
 }

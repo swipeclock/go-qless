@@ -1,10 +1,9 @@
-package goqless
+package qless
 
 import (
 	"github.com/garyburd/redigo/redis"
 	"reflect"
 	"strings"
-	"time"
 )
 
 var (
@@ -19,130 +18,158 @@ type History struct {
 	Worker string
 }
 
-type Job struct {
-	Jid          string
-	Klass        string
-	State        string
-	Queue        string
-	Worker       string
-	Tracked      bool
-	Priority     int
-	Expires      int64
-	Retries      int
-	Remaining    int
-	Data         interface{}
-	Tags         StringSlice
-	History      []History
-	Failure      interface{}
-	Dependents   StringSlice
-	Dependencies interface{}
+type Job interface {
+	JID() string
+	Class() string
+	State() string
+	Queue() string
+	Worker() string
+	Tracked() bool
+	Priority() int
+	Expires() int64
+	Retries() int
+	Remaining() int
+	Data() interface{}
+	Tags() []string
+	History() []History
+	Failure() interface{}
+	Dependents() []string
+	Dependencies() interface{}
 
-	cli *Client
+	// operations
+	Fail(typ, message string) (bool, error)
+	CompleteWithNoData() (string, error)
+	HeartbeatWithNoData() (bool, error)
 }
 
-func NewJob(cli *Client) *Job {
-	return &Job{
-		Expires:      time.Now().Add(time.Hour * 60).UTC().Unix(), // hour from now
-		Dependents:   nil,                                         // []interface{}{},
-		Tracked:      false,
-		Tags:         nil,
-		Jid:          generateJID(),
-		Retries:      5,
-		Data:         nil,
-		Queue:        "mock_queue",
-		State:        "running",
-		Remaining:    5,
-		Failure:      nil,
-		History:      nil, // []interface{}{},
-		Dependencies: nil,
-		Klass:        "Job",
-		Priority:     0,
-		Worker:       "mock_worker",
-		cli:          cli,
-	}
+//easyjson:json
+type job struct {
+	data *jobData
+	c    *Client
 }
 
-func (j *Job) Client() *Client {
-	return j.cli
+func (j *job) JID() string {
+	return j.data.Jid
 }
-
-func (j *Job) SetClient(cli *Client) {
-	j.cli = cli
+func (j *job) Class() string {
+	return j.data.Klass
+}
+func (j *job) State() string {
+	return j.data.State
+}
+func (j *job) Queue() string {
+	return j.data.Queue
+}
+func (j *job) Worker() string {
+	return j.data.Worker
+}
+func (j *job) Tracked() bool {
+	return j.data.Tracked
+}
+func (j *job) Priority() int {
+	return j.data.Priority
+}
+func (j *job) Expires() int64 {
+	return j.data.Expires
+}
+func (j *job) Retries() int {
+	return j.data.Retries
+}
+func (j *job) Remaining() int {
+	return j.data.Remaining
+}
+func (j *job) Data() interface{} {
+	return j.data.Data
+}
+func (j *job) Tags() []string {
+	return j.data.Tags
+}
+func (j *job) History() []History {
+	return j.data.History
+}
+func (j *job) Failure() interface{} {
+	return j.data.Failure
+}
+func (j *job) Dependents() []string {
+	return j.data.Dependents
+}
+func (j *job) Dependencies() interface{} {
+	return j.data.Dependencies
 }
 
 // Move this from it's current queue into another
-func (j *Job) Move(queueName string) (string, error) {
-	return redis.String(j.cli.Do("qless", 0, "put", timestamp(), queueName, j.Jid, j.Klass, marshal(j.Data), 0))
+func (j *job) Move(queueName string) (string, error) {
+	return redis.String(j.c.Do("put", timestamp(), queueName, j.data.Jid, j.data.Klass, marshal(j.data.Data), 0))
 }
 
 // Fail this job
 // return success, error
-func (j *Job) Fail(typ, message string) (bool, error) {
-	return Bool(j.cli.Do("qless", 0, "fail", timestamp(), j.Jid, j.Worker, typ, message, marshal(j.Data)))
+func (j *job) Fail(typ, message string) (bool, error) {
+	return Bool(j.c.Do("fail", timestamp(), j.data.Jid, j.data.Worker, typ, message, marshal(j.data.Data)))
 }
 
 // Heartbeats this job
 // return success, error
-func (j *Job) Heartbeat() (bool, error) {
-	return Bool(j.cli.Do("qless", 0, "heartbeat", timestamp(), j.Jid, j.Worker, marshal(j.Data)))
+func (j *job) Heartbeat() (bool, error) {
+	return Bool(j.c.Do("heartbeat", timestamp(), j.data.Jid, j.data.Worker, marshal(j.data.Data)))
 }
 
 // Completes this job
 // returns state, error
-func (j *Job) Complete() (string, error) {
-	return redis.String(j.cli.Do("qless", 0, "complete", timestamp(), j.Jid, j.Worker, j.Queue, marshal(j.Data)))
+func (j *job) Complete() (string, error) {
+	return redis.String(j.c.Do("complete", timestamp(), j.data.Jid, j.data.Worker, j.data.Queue, marshal(j.data.Data)))
 }
 
 //for big job, save memory in redis
-func (j *Job) CompleteWithNoData() (string, error) {
-	return redis.String(j.cli.Do("qless", 0, "complete", timestamp(), j.Jid, j.Worker, j.Queue, finishBytes))
+func (j *job) CompleteWithNoData() (string, error) {
+	return redis.String(j.c.Do("complete", timestamp(), j.data.Jid, j.data.Worker, j.data.Queue, finishBytes))
 }
 
-func (j *Job) HeartbeatWithNoData() (bool, error) {
-	return Bool(j.cli.Do("qless", 0, "heartbeat", timestamp(), j.Jid, j.Worker))
+func (j *job) HeartbeatWithNoData() (bool, error) {
+	return Bool(j.c.Do("heartbeat", timestamp(), j.data.Jid, j.data.Worker))
 }
 
 // Cancels this job
-func (j *Job) Cancel() {
-	j.cli.Do("qless", 0, "cancel", timestamp(), j.Jid)
+func (j *job) Cancel() {
+	j.c.Do("cancel", timestamp(), j.data.Jid)
 }
 
 // Track this job
-func (j *Job) Track() (bool, error) {
-	return Bool(j.cli.Do("qless", 0, "track", timestamp(), "track", j.Jid))
+func (j *job) Track() (bool, error) {
+	return Bool(j.c.Do("track", timestamp(), "track", j.data.Jid))
 }
 
 // Untrack this job
-func (j *Job) Untrack() (bool, error) {
-	return Bool(j.cli.Do("qless", 0, "track", timestamp(), "untrack", j.Jid))
+func (j *job) Untrack() (bool, error) {
+	return Bool(j.c.Do("track", timestamp(), "untrack", j.data.Jid))
 }
 
-func (j *Job) Tag(tags ...interface{}) (string, error) {
-	args := []interface{}{0, "tag", timestamp(), "add", j.Jid}
+func (j *job) Tag(tags ...interface{}) (string, error) {
+	args := []interface{}{"tag", timestamp(), "add", j.data.Jid}
 	args = append(args, tags...)
-	return redis.String(j.cli.Do("qless", args...))
+	return redis.String(j.c.Do(args...))
 }
 
-func (j *Job) Untag(tags ...interface{}) (string, error) {
-	args := []interface{}{0, "tag", timestamp(), "remove", j.Jid}
+func (j *job) Untag(tags ...interface{}) (string, error) {
+	args := []interface{}{"tag", timestamp(), "remove", j.data.Jid}
 	args = append(args, tags...)
-	return redis.String(j.cli.Do("qless", args...))
+	return redis.String(j.c.Do(args...))
 }
 
-func (j *Job) Retry(delay int) (int, error) {
-	return redis.Int(j.cli.Do("qless", 0, "retry", timestamp(), j.Jid, j.Queue, j.Worker, delay))
+func (j *job) Retry(delay int) (int, error) {
+	return redis.Int(j.c.Do("retry", timestamp(), j.data.Jid, j.data.Queue, j.data.Worker, delay))
 }
 
-func (j *Job) Depend(jids ...interface{}) (string, error) {
-	args := []interface{}{0, "depends", timestamp(), j.Jid, "on"}
+func (j *job) Depend(jids ...interface{}) (string, error) {
+	args := []interface{}{"depends", timestamp(), j.data.Jid, "on"}
 	args = append(args, jids...)
-	return redis.String(j.cli.Do("qless", args...))
+	return redis.String(j.c.Do(args...))
 }
 
-func (j *Job) Undepend(jids ...interface{}) (string, error) {
-	args := []interface{}{0, "depends", timestamp(), j.Jid, "off"}
+func (j *job) Undepend(jids ...interface{}) (string, error) {
+	args := []interface{}{"depends", timestamp(), j.data.Jid, "off"}
 	args = append(args, jids...)
-	return redis.String(j.cli.Do("qless", args...))
+	return redis.String(j.c.Do(args...))
 }
 
 type RecurringJob struct {
@@ -171,7 +198,7 @@ func NewRecurringJob(cli *Client) *RecurringJob {
 //   data interface{}
 //   klass string
 func (r *RecurringJob) Update(opts map[string]interface{}) {
-	args := []interface{}{0, "recur", timestamp(), "update", r.Jid}
+	args := []interface{}{"recur", timestamp(), "update", r.Jid}
 
 	vOf := reflect.ValueOf(r).Elem()
 	for key, value := range opts {
@@ -187,21 +214,21 @@ func (r *RecurringJob) Update(opts map[string]interface{}) {
 		}
 	}
 
-	r.cli.Do("qless", args...)
+	r.cli.Do(args...)
 }
 
 func (r *RecurringJob) Cancel() {
-	r.cli.Do("qless", 0, "recur", timestamp(), "off", r.Jid)
+	r.cli.Do("recur", timestamp(), "off", r.Jid)
 }
 
 func (r *RecurringJob) Tag(tags ...interface{}) {
-	args := []interface{}{0, "recur", timestamp(), "tag", r.Jid}
+	args := []interface{}{"recur", timestamp(), "tag", r.Jid}
 	args = append(args, tags...)
-	r.cli.Do("qless", args...)
+	r.cli.Do(args...)
 }
 
 func (r *RecurringJob) Untag(tags ...interface{}) {
-	args := []interface{}{0, "recur", timestamp(), "untag", r.Jid}
+	args := []interface{}{"recur", timestamp(), "untag", r.Jid}
 	args = append(args, tags...)
-	r.cli.Do("qless", args...)
+	r.cli.Do(args...)
 }
