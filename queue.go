@@ -18,7 +18,7 @@ type Queue interface {
 	Put(class string, data interface{}, opt ...putOptionFn) (string, error)
 	PopOne() (j Job, err error)
 	Pop(count int) ([]Job, error)
-	Recur(jid, class string, data interface{}, interval, offset, priority int, tags []string, retries int) (string, error)
+	Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error)
 	Len() (int64, error)
 }
 
@@ -103,31 +103,31 @@ type putOptionFn func(d *putData)
 
 func putOptionNoOp(*putData) {}
 
-func PutJID(v string) putOptionFn {
+func WithJID(v string) putOptionFn {
 	return func(p *putData) {
 		p.jid = v
 	}
 }
 
-func PutDelay(v int) putOptionFn {
+func WithDelay(v int) putOptionFn {
 	return func(p *putData) {
 		p.delay = v
 	}
 }
 
-func PutPriority(v int) putOptionFn {
+func WithPriority(v int) putOptionFn {
 	return func(p *putData) {
 		p.args = append(p.args, "priority", v)
 	}
 }
 
-func PutRetries(v int) putOptionFn {
+func WithRetries(v int) putOptionFn {
 	return func(p *putData) {
 		p.args = append(p.args, "retries", v)
 	}
 }
 
-func PutTags(v []string) putOptionFn {
+func WithTags(v []string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -136,7 +136,7 @@ func PutTags(v []string) putOptionFn {
 	}
 }
 
-func PutDepends(v []string) putOptionFn {
+func WithDepends(v []string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -145,7 +145,7 @@ func PutDepends(v []string) putOptionFn {
 	}
 }
 
-func PutResources(v []string) putOptionFn {
+func WithResources(v []string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -164,6 +164,17 @@ func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string,
 	return redis.String(q.c.Do(args...))
 }
 
+func (q *queue) Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error) {
+	pd := newPutData()
+	pd.setOptions(opt)
+
+	args := []interface{}{"recur", timestamp(), "on", q.name, pd.jid, class, marshal(data), "interval", interval, pd.delay}
+	args = append(args, pd.args...)
+
+	return redis.String(q.c.Do(args...))
+}
+
+// Pops a job off the queue.
 func (q *queue) PopOne() (j Job, err error) {
 	var jobs []Job
 	if jobs, err = q.Pop(1); err == nil && len(jobs) == 1 {
@@ -172,7 +183,7 @@ func (q *queue) PopOne() (j Job, err error) {
 	return
 }
 
-// Pops a job off the queue.
+// Put a recurring job in this queue
 func (q *queue) Pop(count int) ([]Job, error) {
 	if count == 0 {
 		count = 1
@@ -195,35 +206,10 @@ func (q *queue) Pop(count int) ([]Job, error) {
 
 	jobs := make([]Job, len(jobsData))
 	for i, v := range jobsData {
-		jobs[i] = &job{jd: &v, c: q.c}
+		jobs[i] = &job{d: &v, c: q.c}
 	}
 
 	return jobs, nil
-}
-
-// Put a recurring job in this queue
-func (q *queue) Recur(jid, class string, data interface{}, interval, offset, priority int, tags []string, retries int) (string, error) {
-	if jid == "" {
-		jid = generateJID()
-	}
-	if interval == -1 {
-		interval = 0
-	}
-	if offset == -1 {
-		offset = 0
-	}
-	if priority == -1 {
-		priority = 0
-	}
-	if retries == -1 {
-		retries = 5
-	}
-
-	return redis.String(q.c.Do(
-		"recur", timestamp(), "on", q.name, jid, class,
-		data, "interval",
-		interval, offset, "priority", priority,
-		"tags", marshal(tags), "retries", retries))
 }
 
 func (q *queue) Len() (int64, error) {

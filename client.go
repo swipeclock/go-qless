@@ -17,6 +17,7 @@ type Client struct {
 	conn redis.Conn
 	host string
 	port string
+	db   int
 
 	events *Events
 	lua    *redis.Script
@@ -31,6 +32,7 @@ func Dial(host, port string, db int) (*Client, error) {
 	return &Client{
 		host: host,
 		port: port,
+		db:   db,
 		lua:  redis.NewScript(0, qlessLua),
 		conn: conn,
 	}, nil
@@ -44,7 +46,7 @@ func (c *Client) Events() *Events {
 	if c.events != nil {
 		return c.events
 	}
-	c.events = NewEvents(c.host, c.port)
+	c.events = NewEvents(c.host, c.port, c.db)
 	return c.events
 }
 
@@ -123,7 +125,7 @@ func (c *Client) GetJob(jid string) (Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &job{jd: &d, c: c}, err
+	return &job{d: &d, c: c}, err
 }
 
 func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {

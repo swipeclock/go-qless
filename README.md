@@ -1,11 +1,9 @@
-Go (golang) version of https://github.com/seomoz/qless. A redis job queue.
+go-qless
+========
+
+This is a work-in-progress update of [goqless] and is only minimally
+tested. Initial work has been done to support queueing jobs for other
+workers
 
 
-depends:
-https://github.com/seomoz/qless-core
-redis 2.6.16  
-
-
-Goqless now works but not every feature is implemented or tested.
-Any reported issues or pull requests are welcome.
-
+[goqless]: https://github.com/ngaut/goqless
