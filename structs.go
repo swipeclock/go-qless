@@ -4,8 +4,8 @@ import "github.com/mailru/easyjson"
 
 //easyjson:json
 type jobData struct {
-	Jid          string              `json:"jid"`
-	Klass        string              `json:"klass"`
+	JID          string              `json:"jid"`
+	Class        string              `json:"klass"`
 	State        string              `json:"state"`
 	Queue        string              `json:"queue"`
 	Worker       string              `json:"worker"`
@@ -25,7 +25,7 @@ type jobData struct {
 //easyjson:json
 type History struct {
 	When   int64  `json:"when"`
-	Q      string `json:"q"`
+	Queue  string `json:"q"`
 	What   string `json:"what"`
 	Worker string `json:"worker"`
 }

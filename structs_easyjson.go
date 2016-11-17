@@ -160,7 +160,7 @@ func easyjson6a975c40DecodeGithubComRyverappGoQless1(in *jlexer.Lexer, out *Hist
 		case "when":
 			out.When = int64(in.Int64())
 		case "q":
-			out.Q = string(in.String())
+			out.Queue = string(in.String())
 		case "what":
 			out.What = string(in.String())
 		case "worker":
@@ -190,7 +190,7 @@ func easyjson6a975c40EncodeGithubComRyverappGoQless1(out *jwriter.Writer, in His
 	}
 	first = false
 	out.RawString("\"q\":")
-	out.String(string(in.Q))
+	out.String(string(in.Queue))
 	if !first {
 		out.RawByte(',')
 	}
@@ -249,9 +249,9 @@ func easyjson6a975c40DecodeGithubComRyverappGoQless2(in *jlexer.Lexer, out *jobD
 		}
 		switch key {
 		case "jid":
-			out.Jid = string(in.String())
+			out.JID = string(in.String())
 		case "klass":
-			out.Klass = string(in.String())
+			out.Class = string(in.String())
 		case "state":
 			out.State = string(in.String())
 		case "queue":
@@ -322,13 +322,13 @@ func easyjson6a975c40EncodeGithubComRyverappGoQless2(out *jwriter.Writer, in job
 	}
 	first = false
 	out.RawString("\"jid\":")
-	out.String(string(in.Jid))
+	out.String(string(in.JID))
 	if !first {
 		out.RawByte(',')
 	}
 	first = false
 	out.RawString("\"klass\":")
-	out.String(string(in.Klass))
+	out.String(string(in.Class))
 	if !first {
 		out.RawByte(',')
 	}

@@ -45,11 +45,11 @@ type job struct {
 }
 
 func (j *job) JID() string {
-	return j.jd.Jid
+	return j.jd.JID
 }
 
 func (j *job) Class() string {
-	return j.jd.Klass
+	return j.jd.Class
 }
 
 func (j *job) State() string {
@@ -110,75 +110,75 @@ func (j *job) Dependencies() []string {
 
 // Move this from it's current queue into another
 func (j *job) Move(queueName string) (string, error) {
-	return redis.String(j.c.Do("put", timestamp(), queueName, j.jd.Jid, j.jd.Klass, marshal(j.jd.Data), 0))
+	return redis.String(j.c.Do("put", timestamp(), queueName, j.jd.JID, j.jd.Class, j.jd.Data, 0))
 }
 
 // Fail this job
 // return success, error
 func (j *job) Fail(typ, message string) (bool, error) {
-	return Bool(j.c.Do("fail", timestamp(), j.jd.Jid, j.jd.Worker, typ, message, marshal(j.jd.Data)))
+	return Bool(j.c.Do("fail", timestamp(), j.jd.JID, j.jd.Worker, typ, message, j.jd.Data))
 }
 
 // Heartbeats this job
 // return success, error
 func (j *job) Heartbeat() (bool, error) {
-	return Bool(j.c.Do("heartbeat", timestamp(), j.jd.Jid, j.jd.Worker, marshal(j.jd.Data)))
+	return Bool(j.c.Do("heartbeat", timestamp(), j.jd.JID, j.jd.Worker, j.jd.Data))
 }
 
 // Completes this job
 // returns state, error
 func (j *job) Complete() (string, error) {
-	return redis.String(j.c.Do("complete", timestamp(), j.jd.Jid, j.jd.Worker, j.jd.Queue, marshal(j.jd.Data)))
+	return redis.String(j.c.Do("complete", timestamp(), j.jd.JID, j.jd.Worker, j.jd.Queue, j.jd.Data))
 }
 
 //for big job, save memory in redis
 func (j *job) CompleteWithNoData() (string, error) {
-	return redis.String(j.c.Do("complete", timestamp(), j.jd.Jid, j.jd.Worker, j.jd.Queue, finishBytes))
+	return redis.String(j.c.Do("complete", timestamp(), j.jd.JID, j.jd.Worker, j.jd.Queue, finishBytes))
 }
 
 func (j *job) HeartbeatWithNoData() (bool, error) {
-	return Bool(j.c.Do("heartbeat", timestamp(), j.jd.Jid, j.jd.Worker))
+	return Bool(j.c.Do("heartbeat", timestamp(), j.jd.JID, j.jd.Worker))
 }
 
 // Cancels this job
 func (j *job) Cancel() {
-	j.c.Do("cancel", timestamp(), j.jd.Jid)
+	j.c.Do("cancel", timestamp(), j.jd.JID)
 }
 
 // Track this job
 func (j *job) Track() (bool, error) {
-	return Bool(j.c.Do("track", timestamp(), "track", j.jd.Jid))
+	return Bool(j.c.Do("track", timestamp(), "track", j.jd.JID))
 }
 
 // Untrack this job
 func (j *job) Untrack() (bool, error) {
-	return Bool(j.c.Do("track", timestamp(), "untrack", j.jd.Jid))
+	return Bool(j.c.Do("track", timestamp(), "untrack", j.jd.JID))
 }
 
 func (j *job) AddTags(tags ...interface{}) (string, error) {
-	args := []interface{}{"tag", timestamp(), "add", j.jd.Jid}
+	args := []interface{}{"tag", timestamp(), "add", j.jd.JID}
 	args = append(args, tags...)
 	return redis.String(j.c.Do(args...))
 }
 
 func (j *job) RemoveTags(tags ...interface{}) (string, error) {
-	args := []interface{}{"tag", timestamp(), "remove", j.jd.Jid}
+	args := []interface{}{"tag", timestamp(), "remove", j.jd.JID}
 	args = append(args, tags...)
 	return redis.String(j.c.Do(args...))
 }
 
 func (j *job) Retry(delay int) (int, error) {
-	return redis.Int(j.c.Do("retry", timestamp(), j.jd.Jid, j.jd.Queue, j.jd.Worker, delay))
+	return redis.Int(j.c.Do("retry", timestamp(), j.jd.JID, j.jd.Queue, j.jd.Worker, delay))
 }
 
 func (j *job) Depend(jids ...interface{}) (string, error) {
-	args := []interface{}{"depends", timestamp(), j.jd.Jid, "on"}
+	args := []interface{}{"depends", timestamp(), j.jd.JID, "on"}
 	args = append(args, jids...)
 	return redis.String(j.c.Do(args...))
 }
 
 func (j *job) Undepend(jids ...interface{}) (string, error) {
-	args := []interface{}{"depends", timestamp(), j.jd.Jid, "off"}
+	args := []interface{}{"depends", timestamp(), j.jd.JID, "off"}
 	args = append(args, jids...)
 	return redis.String(j.c.Do(args...))
 }

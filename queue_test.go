@@ -33,9 +33,7 @@ func TestQueue_PopMultiple(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		q.Put("class", "data")
 	}
-	fmt.Println(q.Info())
 	jobs, err := q.Pop(10)
-	fmt.Println(q.Info())
 	assert.NoError(t, err)
 	assert.Len(t, jobs, 10)
 }
