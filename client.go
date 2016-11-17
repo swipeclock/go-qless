@@ -52,38 +52,40 @@ func (c *Client) Do(args ...interface{}) (interface{}, error) {
 	return c.lua.Do(c.conn, args...)
 }
 
-func (c *Client) Queue(name string) *Queue {
-	q := NewQueue(c)
-	q.Name = name
-	return q
+func (c *Client) Queue(name string) Queue {
+	return &queue{name: name, c: c}
 }
 
-func (c *Client) Queues(name string) ([]*Queue, error) {
+func (c *Client) Queues() (queues []Queue, err error) {
 	args := []interface{}{"queues", timestamp()}
-	if name != "" {
-		args = append(args, name)
-	}
 
 	byts, err := redis.Bytes(c.Do(args...))
 	if err != nil {
 		return nil, err
 	}
 
-	qr := []*Queue{NewQueue(c)}
-	if name == "" {
-		err = json.Unmarshal(byts, &qr)
-		for _, q := range qr {
-			q.cli = c
-		}
-	} else {
-		err = json.Unmarshal(byts, &qr[0])
-	}
-
+	var infos []QueueInfo
+	err = json.Unmarshal(byts, &infos)
 	if err != nil {
 		return nil, err
 	}
 
-	return qr, err
+	queues = make([]Queue, len(infos))
+	for i, info := range infos {
+		queues[i] = &queue{name: info.Name, info: info, c: c}
+	}
+	return queues, err
+}
+
+func (c *Client) queueInfo(name string, info *QueueInfo) error {
+	args := []interface{}{"queues", timestamp(), name}
+
+	byts, err := redis.Bytes(c.Do(args...))
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(byts, info)
 }
 
 // Track the jid
@@ -121,7 +123,7 @@ func (c *Client) GetJob(jid string) (Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &job{&d, c}, err
+	return &job{jd: &d, c: c}, err
 }
 
 func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {

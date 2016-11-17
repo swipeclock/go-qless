@@ -39,6 +39,17 @@ func newClient() *Client {
 	return c
 }
 
+func newClientFlush() *Client {
+	c, err := Dial(redisHost, redisPort, redisDB)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	c.conn.Do("FLUSHDB")
+
+	return c
+}
+
 func flushDB() {
 	c := newClient()
 	defer c.Close()

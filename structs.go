@@ -1,22 +1,43 @@
 package qless
 
+import "github.com/mailru/easyjson"
+
 //easyjson:json
 type jobData struct {
-	Jid          string
-	Klass        string
-	State        string
-	Queue        string
-	Worker       string
-	Tracked      bool
-	Priority     int
-	Expires      int64
-	Retries      int
-	Remaining    int
-	Data         interface{}
-	Tags         StringSlice
-	History      []History
-	Failure      interface{}
-	Dependents   StringSlice
-	Dependencies interface{}
+	Jid          string              `json:"jid"`
+	Klass        string              `json:"klass"`
+	State        string              `json:"state"`
+	Queue        string              `json:"queue"`
+	Worker       string              `json:"worker"`
+	Tracked      bool                `json:"tracked"`
+	Priority     int                 `json:"priority"`
+	Expires      int64               `json:"expires"`
+	Retries      int                 `json:"retries"`
+	Remaining    int                 `json:"remaining"`
+	Data         easyjson.RawMessage `json:"data"`
+	Tags         StringSlice         `json:"tags"`
+	History      []History           `json:"history"`
+	Failure      interface{}         `json:"failure"`
+	Dependents   StringSlice         `json:"dependents"`
+	Dependencies StringSlice         `json:"dependencies"`
 }
 
+//easyjson:json
+type History struct {
+	When   int64  `json:"when"`
+	Q      string `json:"q"`
+	What   string `json:"what"`
+	Worker string `json:"worker"`
+}
+
+//easyjson:json
+type QueueInfo struct {
+	Name      string `json:"name"`
+	Paused    bool   `json:"paused"`
+	Waiting   int    `json:"waiting"`
+	Running   int    `json:"running"`
+	Stalled   int    `json:"stalled"`
+	Scheduled int    `json:"scheduled"`
+	Recurring int    `json:"recurring"`
+	Depends   int    `json:"depends"`
+}

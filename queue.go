@@ -8,24 +8,37 @@ import (
 
 var _ = fmt.Sprint("")
 
-type Queue struct {
-	Running   int
-	Name      string
-	Waiting   int
-	Recurring int
-	Depends   int
-	Stalled   int
-	Scheduled int
-
-	cli *Client
+type Queue interface {
+	Name() string
+	Info() QueueInfo
+	Jobs(state string, start, count int) ([]string, error)
+	CancelAll()
+	Pause()
+	Resume()
+	Put(class string, data interface{}, opt ...putOptionFn) (string, error)
+	PopOne() (j Job, err error)
+	Pop(count int) ([]Job, error)
+	Recur(jid, class string, data interface{}, interval, offset, priority int, tags []string, retries int) (string, error)
+	Len() (int64, error)
 }
 
-func NewQueue(cli *Client) *Queue {
-	return &Queue{cli: cli}
+type queue struct {
+	name string
+	info QueueInfo
+	c    *Client
 }
 
-func (q *Queue) Jobs(state string, start, count int) ([]string, error) {
-	reply, err := redis.Values(q.cli.Do("jobs", timestamp(), state, q.Name))
+func (q *queue) Name() string {
+	return q.name
+}
+
+func (q *queue) Info() QueueInfo {
+	q.c.queueInfo(q.name, &q.info)
+	return q.info
+}
+
+func (q *queue) Jobs(state string, start, count int) ([]string, error) {
+	reply, err := redis.Values(q.c.Do("jobs", timestamp(), state, q.name))
 	if err != nil {
 		return nil, err
 	}
@@ -39,13 +52,13 @@ func (q *Queue) Jobs(state string, start, count int) ([]string, error) {
 }
 
 // Cancel all jobs in this queue
-func (q *Queue) CancelAll() {
-	for _, state := range JOBSTATES {
+func (q *queue) CancelAll() {
+	for _, state := range jobStates {
 		var jids []string
 		for {
 			jids, _ = q.Jobs(state, 0, 100)
 			for _, jid := range jids {
-				j, err := q.cli.GetRecurringJob(jid)
+				j, err := q.c.GetRecurringJob(jid)
 				if j != nil && err == nil {
 					j.Cancel()
 				}
@@ -58,12 +71,12 @@ func (q *Queue) CancelAll() {
 	}
 }
 
-func (q *Queue) Pause() {
-	q.cli.Do("pause", timestamp(), q.Name)
+func (q *queue) Pause() {
+	q.c.Do("pause", timestamp(), q.name)
 }
 
-func (q *Queue) Unpause() {
-	q.cli.Do("unpause", timestamp(), q.Name)
+func (q *queue) Resume() {
+	q.c.Do("unpause", timestamp(), q.name)
 }
 
 type putData struct {
@@ -142,16 +155,16 @@ func PutResources(v []string) putOptionFn {
 }
 
 // Put enqueues a job to the named queue
-func (q *Queue) Put(class string, data interface{}, opt ...putOptionFn) (string, error) {
+func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string, error) {
 	pd := newPutData()
 	pd.setOptions(opt)
-	args := []interface{}{"put", timestamp(), "", q.Name, pd.jid, class, marshal(data), pd.delay}
+	args := []interface{}{"put", timestamp(), "", q.name, pd.jid, class, marshal(data), pd.delay}
 	args = append(args, pd.args...)
 
-	return redis.String(q.cli.Do(args...))
+	return redis.String(q.c.Do(args...))
 }
 
-func (q *Queue) PopOne() (j Job, err error) {
+func (q *queue) PopOne() (j Job, err error) {
 	var jobs []Job
 	if jobs, err = q.Pop(1); err == nil && len(jobs) == 1 {
 		j = jobs[0]
@@ -160,12 +173,12 @@ func (q *Queue) PopOne() (j Job, err error) {
 }
 
 // Pops a job off the queue.
-func (q *Queue) Pop(count int) ([]Job, error) {
+func (q *queue) Pop(count int) ([]Job, error) {
 	if count == 0 {
 		count = 1
 	}
 
-	reply, err := redis.Bytes(q.cli.Do("pop", timestamp(), q.Name, workerName(), count))
+	reply, err := redis.Bytes(q.c.Do("pop", timestamp(), q.name, workerName(), count))
 	if err != nil {
 		return nil, err
 	}
@@ -182,14 +195,14 @@ func (q *Queue) Pop(count int) ([]Job, error) {
 
 	jobs := make([]Job, len(jobsData))
 	for i, v := range jobsData {
-		jobs[i] = &job{&v, q.cli}
+		jobs[i] = &job{jd: &v, c: q.c}
 	}
 
 	return jobs, nil
 }
 
 // Put a recurring job in this queue
-func (q *Queue) Recur(jid, class string, data interface{}, interval, offset, priority int, tags []string, retries int) (string, error) {
+func (q *queue) Recur(jid, class string, data interface{}, interval, offset, priority int, tags []string, retries int) (string, error) {
 	if jid == "" {
 		jid = generateJID()
 	}
@@ -206,9 +219,18 @@ func (q *Queue) Recur(jid, class string, data interface{}, interval, offset, pri
 		retries = 5
 	}
 
-	return redis.String(q.cli.Do(
-		"recur", timestamp(), "on", q.Name, jid, class,
+	return redis.String(q.c.Do(
+		"recur", timestamp(), "on", q.name, jid, class,
 		data, "interval",
 		interval, offset, "priority", priority,
 		"tags", marshal(tags), "retries", retries))
+}
+
+func (q *queue) Len() (int64, error) {
+	reply, err := redis.Int64(q.c.Do("length", timestamp(), q.name))
+	if err != nil {
+		fmt.Println(err)
+		return -1, err
+	}
+	return reply, nil
 }
