@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/garyburd/redigo/redis"
+	"github.com/mailru/easyjson"
 	mrand "math/rand"
 	"os"
 	"strconv"
@@ -101,12 +102,18 @@ func ucfirst(s string) string {
 
 // marshals a value. if the value happens to be
 // a string or []byte, just return it.
-func marshal(i interface{}) []byte {
-	byts, err := json.Marshal(i)
+func marshal(i interface{}) (r []byte) {
+	var err error
+	if m, ok := i.(easyjson.Marshaler); ok {
+		r, err = easyjson.Marshal(m)
+	} else {
+		r, err = json.Marshal(i)
+	}
+
 	if err != nil {
 		return nil
 	}
-	return byts
+	return
 }
 
 // Bool is a helper that converts a command reply to a boolean. If err is not
