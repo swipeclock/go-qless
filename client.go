@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"strconv"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 type TaggedReply struct {

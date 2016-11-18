@@ -7,14 +7,15 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"github.com/garyburd/redigo/redis"
-	"github.com/mailru/easyjson"
 	mrand "math/rand"
 	"os"
 	"strconv"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/garyburd/redigo/redis"
+	"github.com/mailru/easyjson"
 )
 
 // type Opts map[string]interface{}

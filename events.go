@@ -2,6 +2,7 @@ package qless
 
 import (
 	"fmt"
+
 	"github.com/garyburd/redigo/redis"
 )
 

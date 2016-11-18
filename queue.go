@@ -3,6 +3,7 @@ package qless
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/garyburd/redigo/redis"
 )
 
