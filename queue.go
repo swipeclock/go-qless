@@ -162,13 +162,6 @@ func WithInterval(v float32) putOptionFn {
 	}
 }
 
-func boolToInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}
-
 // Put enqueues a job to the named queue
 func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string, error) {
 	pd := newPutData()
