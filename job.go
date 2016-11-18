@@ -109,23 +109,23 @@ func (j *job) Dependencies() []string {
 
 // Move this from it's current queue into another
 func (j *job) Move(queueName string) (string, error) {
-	return redis.String(j.c.Do("put", timestamp(), queueName, j.d.JID, j.d.Class, j.d.Data, 0))
+	return redis.String(j.c.Do("put", timestamp(), queueName, j.d.JID, j.d.Class, string(j.d.Data), 0))
 }
 
 // Fail this job
 func (j *job) Fail(typ, message string) (bool, error) {
-	return Bool(j.c.Do("fail", timestamp(), j.d.JID, j.d.Worker, typ, message, j.d.Data))
+	return Bool(j.c.Do("fail", timestamp(), j.d.JID, j.d.Worker, typ, message, string(j.d.Data)))
 }
 
 // Heartbeats this job
 func (j *job) Heartbeat() (bool, error) {
-	return Bool(j.c.Do("heartbeat", timestamp(), j.d.JID, j.d.Worker, j.d.Data))
+	return Bool(j.c.Do("heartbeat", timestamp(), j.d.JID, j.d.Worker, string(j.d.Data)))
 }
 
 // Completes this job
 // returns state, error
 func (j *job) Complete() (string, error) {
-	return redis.String(j.c.Do("complete", timestamp(), j.d.JID, j.d.Worker, j.d.Queue, j.d.Data))
+	return redis.String(j.c.Do("complete", timestamp(), j.d.JID, j.d.Worker, j.d.Queue, string(j.d.Data)))
 }
 
 //for big job, save memory in redis
