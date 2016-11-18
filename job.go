@@ -2,6 +2,7 @@ package qless
 
 import (
 	"github.com/garyburd/redigo/redis"
+	"time"
 )
 
 var (
@@ -18,6 +19,7 @@ type Job interface {
 	Tracked() bool
 	Priority() int
 	Expires() int64
+	TTL() int64
 	Retries() int
 	Remaining() int
 	Data() []byte
@@ -73,6 +75,10 @@ func (j *job) Priority() int {
 
 func (j *job) Expires() int64 {
 	return j.d.Expires
+}
+
+func (j *job) TTL() int64 {
+	return j.d.Expires - time.Now().Unix()
 }
 
 func (j *job) Retries() int {

@@ -51,8 +51,12 @@ func (c *Client) Events() *Events {
 	return c.events
 }
 
+func scriptReply(reply interface{}, err error) (interface{}, error) {
+	return reply, parseError(err)
+}
+
 func (c *Client) Do(args ...interface{}) (interface{}, error) {
-	return c.lua.Do(c.conn, args...)
+	return scriptReply(c.lua.Do(c.conn, args...))
 }
 
 func (c *Client) Queue(name string) Queue {
