@@ -16,6 +16,7 @@ type Queue interface {
 	Pause()
 	Resume()
 	Put(class string, data interface{}, opt ...putOptionFn) (string, error)
+	PutOrReplace(class string, jid string, data interface{}, opt ...putOptionFn) (int64, error)
 	PopOne() (j Job, err error)
 	Pop(count int) ([]Job, error)
 	Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error)
@@ -154,6 +155,19 @@ func WithResources(v []string) putOptionFn {
 	}
 }
 
+func WithInterval(v float32) putOptionFn {
+	return func(p *putData) {
+		p.args = append(p.args, "interval", v)
+	}
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 // Put enqueues a job to the named queue
 func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string, error) {
 	pd := newPutData()
@@ -162,6 +176,26 @@ func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string,
 	args = append(args, pd.args...)
 
 	return redis.String(q.c.Do(args...))
+}
+
+// Put enqueues a job to the named queue
+func (q *queue) PutOrReplace(class string, jid string, data interface{}, opt ...putOptionFn) (int64, error) {
+	pd := newPutData()
+	pd.setOptions(opt)
+	args := []interface{}{"put", timestamp(), "", q.name, jid, class, marshal(data), pd.delay}
+	args = append(args, pd.args...)
+	args = append(args, "replace", 0)
+
+	r, err := q.c.Do(args...)
+	if err != nil {
+		return -1, err
+	}
+
+	if r, ok := r.(int64); ok {
+		return r, nil
+	}
+
+	return -1, nil
 }
 
 func (q *queue) Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error) {

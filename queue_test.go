@@ -48,3 +48,35 @@ func TestQueue_Length(t *testing.T) {
 	assert.NoError(t, err)
 	assert.EqualValues(t, 10, l)
 }
+
+func TestQueue_JobWithIntervalIsThrottled(t *testing.T) {
+	c := newClientFlush()
+	q := c.Queue("test_queue")
+	_, err := q.Put("class", "data", WithJID("jid-1"), WithInterval(60))
+	assert.NoError(t, err)
+	j1, err := q.PopOne()
+	assert.NoError(t, err)
+	assert.Equal(t, "jid-1", j1.JID())
+	_, err = j1.Complete()
+	assert.NoError(t, err)
+
+	q.Put("class", "data", WithJID("jid-1"), WithInterval(60))
+	j1, err = q.PopOne()
+	assert.NoError(t, err)
+	assert.Nil(t, j1)
+}
+
+func TestQueue_JobIsNotReplaced(t *testing.T) {
+	c := newClientFlush()
+	q := c.Queue("test_queue")
+	tl, err := q.PutOrReplace("class", "jid-1", "data")
+	assert.NoError(t, err)
+
+	j1, err := q.PopOne()
+	assert.NoError(t, err)
+	assert.Equal(t, "jid-1", j1.JID())
+
+	tl, err = q.PutOrReplace("class", "jid-1", "data")
+	assert.NoError(t, err)
+	assert.True(t, tl > 0)
+}
