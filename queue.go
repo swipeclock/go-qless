@@ -129,7 +129,7 @@ func WithRetries(v int) putOptionFn {
 	}
 }
 
-func WithTags(v []string) putOptionFn {
+func WithTags(v ...string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -138,7 +138,7 @@ func WithTags(v []string) putOptionFn {
 	}
 }
 
-func WithDepends(v []string) putOptionFn {
+func WithDepends(v ...string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -147,7 +147,7 @@ func WithDepends(v []string) putOptionFn {
 	}
 }
 
-func WithResources(v []string) putOptionFn {
+func WithResources(v ...string) putOptionFn {
 	if v == nil {
 		return putOptionNoOp
 	}
@@ -217,17 +217,17 @@ func (q *queue) Pop(count int) ([]Job, error) {
 		count = 1
 	}
 
-	reply, err := redis.Bytes(q.c.Do("pop", timestamp(), q.name, workerName(), count))
+	data, err := redis.Bytes(q.c.Do("pop", timestamp(), q.name, workerName(), count))
 	if err != nil {
 		return nil, err
 	}
 
-	if len(reply) == 2 {
+	if len(data) == 2 {
 		return nil, nil
 	}
 
 	var jobsData []jobData
-	err = json.Unmarshal(reply, &jobsData)
+	err = json.Unmarshal(data, &jobsData)
 	if err != nil {
 		return nil, err
 	}

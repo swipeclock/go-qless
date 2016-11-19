@@ -1,8 +1,9 @@
 package qless
 
 import (
-	"github.com/garyburd/redigo/redis"
 	"time"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 var (

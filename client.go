@@ -1,7 +1,6 @@
 package qless
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -65,14 +64,13 @@ func (c *Client) Queue(name string) Queue {
 
 func (c *Client) Queues() (queues []Queue, err error) {
 	args := []interface{}{"queues", timestamp()}
-
-	byts, err := redis.Bytes(c.Do(args...))
+	data, err := redis.Bytes(c.Do(args...))
 	if err != nil {
 		return nil, err
 	}
 
 	var infos []QueueInfo
-	err = json.Unmarshal(byts, &infos)
+	err = unmarshal(data, &infos)
 	if err != nil {
 		return nil, err
 	}
@@ -86,13 +84,12 @@ func (c *Client) Queues() (queues []Queue, err error) {
 
 func (c *Client) queueInfo(name string, info *QueueInfo) error {
 	args := []interface{}{"queues", timestamp(), name}
-
-	byts, err := redis.Bytes(c.Do(args...))
+	data, err := redis.Bytes(c.Do(args...))
 	if err != nil {
 		return err
 	}
 
-	return json.Unmarshal(byts, info)
+	return unmarshal(data, info)
 }
 
 // Track the jid
@@ -120,13 +117,13 @@ func (c *Client) Get(jid string) (interface{}, error) {
 }
 
 func (c *Client) GetJob(jid string) (Job, error) {
-	byts, err := redis.Bytes(c.Do("get", timestamp(), jid))
+	data, err := redis.Bytes(c.Do("get", timestamp(), jid))
 	if err != nil {
 		return nil, err
 	}
 
 	var d jobData
-	err = json.Unmarshal(byts, d)
+	err = unmarshal(data, d)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +131,13 @@ func (c *Client) GetJob(jid string) (Job, error) {
 }
 
 func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {
-	byts, err := redis.Bytes(c.Do("recur", timestamp(), "get", jid))
+	data, err := redis.Bytes(c.Do("recur", timestamp(), "get", jid))
 	if err != nil {
 		return nil, err
 	}
 
 	job := NewRecurringJob(c)
-	err = json.Unmarshal(byts, job)
+	err = unmarshal(data, job)
 	if err != nil {
 		return nil, err
 	}
@@ -162,29 +159,29 @@ func (c *Client) Completed(start, count int) ([]string, error) {
 }
 
 func (c *Client) Tagged(tag string, start, count int) (*TaggedReply, error) {
-	byts, err := redis.Bytes(c.Do("tag", timestamp(), "get", tag, start, count))
+	data, err := redis.Bytes(c.Do("tag", timestamp(), "get", tag, start, count))
 	if err != nil {
 		return nil, err
 	}
 
 	t := &TaggedReply{}
-	err = json.Unmarshal(byts, t)
+	err = unmarshal(data, t)
 	return t, err
 }
 
 func (c *Client) GetConfig(option string) (string, error) {
-	interf, err := c.Do("config.get", timestamp(), option)
+	reply, err := c.Do("config.get", timestamp(), option)
 	if err != nil {
 		return "", err
 	}
 
 	var contentStr string
-	switch interf.(type) {
+	switch reply.(type) {
 	case []uint8:
-		contentStr, err = redis.String(interf, nil)
+		contentStr, err = redis.String(reply, nil)
 	case int64:
 		var contentInt64 int64
-		contentInt64, err = redis.Int64(interf, nil)
+		contentInt64, err = redis.Int64(reply, nil)
 		if err == nil {
 			contentStr = strconv.Itoa(int(contentInt64))
 		}
@@ -199,9 +196,9 @@ func (c *Client) GetConfig(option string) (string, error) {
 }
 
 func (c *Client) SetConfig(option string, value interface{}) {
-	intf, err := c.Do("config.set", timestamp(), option, value)
+	reply, err := c.Do("config.set", timestamp(), option, value)
 	if err != nil {
-		fmt.Println("setconfig, c.Do fail. interface:", intf, " err:", err)
+		fmt.Println("setconfig, c.Do fail. interface:", reply, " err:", err)
 	}
 }
 

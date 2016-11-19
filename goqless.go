@@ -117,6 +117,14 @@ func marshal(i interface{}) (r []byte) {
 	return
 }
 
+func unmarshal(data []byte, v interface{}) error {
+	if m, ok := v.(easyjson.Unmarshaler); ok {
+		return easyjson.Unmarshal(data, m)
+	}
+
+	return json.Unmarshal(data, v)
+}
+
 // Bool is a helper that converts a command reply to a boolean. If err is not
 // equal to nil, then Bool returns false, err. Otherwise Bool converts the
 // reply to boolean as follows:
