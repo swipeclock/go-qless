@@ -17,7 +17,7 @@ type jobData struct {
 	Data         easyjson.RawMessage `json:"data"`
 	Tags         StringSlice         `json:"tags"`
 	History      []History           `json:"history"`
-	Failure      interface{}         `json:"failure"`
+	Failure      *Failure            `json:"failure,omitempty"`
 	Dependents   StringSlice         `json:"dependents"`
 	Dependencies StringSlice         `json:"dependencies"`
 }
@@ -40,4 +40,12 @@ type QueueInfo struct {
 	Scheduled int    `json:"scheduled"`
 	Recurring int    `json:"recurring"`
 	Depends   int    `json:"depends"`
+}
+
+//easyjson:json
+type Failure struct {
+	Group   string `json:"group"`
+	Message string `json:"message"`
+	When    int64  `json:"when"`
+	Worker  string `json:"worker"`
 }

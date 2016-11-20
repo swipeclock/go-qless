@@ -34,7 +34,9 @@ func TestJob_TTL(t *testing.T) {
 	workerNameStr = "worker-1"
 	j1, err := q.PopOne()
 	assert.NoError(t, err)
-	assert.Condition(t, func() bool { return j1.TTL() > 55 })
+	assert.Condition(t, func() bool {
+		return j1.TTL() > 55
+	})
 }
 
 func TestJob_Complete(t *testing.T) {
@@ -48,6 +50,25 @@ func TestJob_Complete(t *testing.T) {
 	res, err := j1.Complete()
 	assert.NoError(t, err)
 	assert.Equal(t, "complete", res)
+}
+
+func TestJob_Fail(t *testing.T) {
+	c := newClientFlush()
+	q := c.Queue("test_queue")
+	q.Put("class", "data", WithJID("jobTestDEF"))
+
+	workerNameStr = "worker-1"
+	j1, err := q.PopOne()
+	assert.NoError(t, err)
+	res, err := j1.Fail("type", "message")
+	assert.NoError(t, err)
+	assert.Equal(t, true, res)
+	j1, err = c.GetJob("jobTestDEF")
+	assert.NoError(t, err)
+	assert.NotNil(t, j1)
+	failure := j1.Failure()
+	failure.When = 0
+	assert.Equal(t, &Failure{Group: "type", Message: "message", Worker: workerNameStr}, failure)
 }
 
 func TestJob_Retry(t *testing.T) {

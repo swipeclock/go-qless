@@ -26,7 +26,7 @@ type Job interface {
 	Data() []byte
 	Tags() []string
 	History() []History
-	Failure() interface{}
+	Failure() *Failure
 	Dependents() []string
 	Dependencies() []string
 
@@ -102,7 +102,7 @@ func (j *job) History() []History {
 	return j.d.History
 }
 
-func (j *job) Failure() interface{} {
+func (j *job) Failure() *Failure {
 	return j.d.Failure
 }
 
