@@ -217,7 +217,7 @@ func (q *queue) Pop(count int) ([]Job, error) {
 		count = 1
 	}
 
-	data, err := redis.Bytes(q.c.Do("pop", timestamp(), q.name, workerName(), count))
+	data, err := redis.Bytes(q.c.Do("pop", timestamp(), q.name, workerNameStr, count))
 	if err != nil {
 		return nil, err
 	}

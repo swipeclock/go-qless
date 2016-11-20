@@ -84,12 +84,7 @@ func generateJID() string {
 
 // returns a timestamp used in LUA calls
 func timestamp() int64 {
-	return time.Now().UTC().Unix()
-}
-
-// returns a worker name for this machine/process
-func workerName() string {
-	return workerNameStr
+	return time.Now().Unix()
 }
 
 // makes the first character of a string upper case
