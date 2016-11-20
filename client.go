@@ -123,7 +123,7 @@ func (c *Client) GetJob(jid string) (Job, error) {
 	}
 
 	var d jobData
-	err = unmarshal(data, d)
+	err = unmarshal(data, &d)
 	if err != nil {
 		return nil, err
 	}
