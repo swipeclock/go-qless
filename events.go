@@ -17,7 +17,7 @@ type Events struct {
 	listening bool
 }
 
-var channels = []interface{}{"ql:log", "canceled", "completed", "failed", "popped", "stalled", "put", "track", "untrack"}
+var channels = []interface{}{"ql:log", "ql:canceled", "ql:completed", "ql:failed", "ql:popped", "ql:stalled", "ql:put", "ql:track", "ql:untrack"}
 
 func NewEvents(host, port string, db int) *Events {
 	return &Events{host: host, port: port, db: db}
