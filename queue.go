@@ -1,13 +1,8 @@
 package qless
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/garyburd/redigo/redis"
 )
-
-var _ = fmt.Sprint("")
 
 type Queue interface {
 	Name() string
@@ -227,7 +222,7 @@ func (q *queue) Pop(count int) ([]Job, error) {
 	}
 
 	var jobsData []jobData
-	err = json.Unmarshal(data, &jobsData)
+	err = unmarshal(data, &jobsData)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +238,6 @@ func (q *queue) Pop(count int) ([]Job, error) {
 func (q *queue) Len() (int64, error) {
 	reply, err := redis.Int64(q.c.Do("length", timestamp(), q.name))
 	if err != nil {
-		fmt.Println(err)
 		return -1, err
 	}
 	return reply, nil
