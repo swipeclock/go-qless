@@ -3,16 +3,10 @@ package qless
 
 import (
 	"bytes"
-	"crypto/md5"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	mrand "math/rand"
 	"os"
 	"strconv"
-	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/mailru/easyjson"
@@ -61,39 +55,6 @@ func (s *StringSlice) UnmarshalJSON(data []byte) error {
 
 	*s = str
 	return nil
-}
-
-// Generates a jid
-func generateJID() string {
-	hasher := md5.New()
-	uuid := make([]byte, 16)
-	n, err := rand.Read(uuid)
-	if err != nil || n != len(uuid) {
-		src := mrand.NewSource(time.Now().UnixNano())
-		r := mrand.New(src)
-		for n, _ := range uuid {
-			uuid[n] = byte(r.Int())
-		}
-	}
-
-	hasher.Write([]byte(workerNameStr))
-	hasher.Write(uuid)
-	hasher.Write([]byte(time.Now().String()))
-	return fmt.Sprintf("%x", hasher.Sum(nil))
-}
-
-// returns a timestamp used in LUA calls
-func timestamp() int64 {
-	return time.Now().Unix()
-}
-
-// makes the first character of a string upper case
-func ucfirst(s string) string {
-	if s == "" {
-		return ""
-	}
-	r, n := utf8.DecodeRuneInString(s)
-	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // marshals a value. if the value happens to be

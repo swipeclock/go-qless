@@ -89,14 +89,15 @@ func newPutData() putData {
 	return putData{}
 }
 
-func (p *putData) setOptions(opt []putOptionFn) {
+func (p *putData) setOptions(opt []putOptionFn) (err error) {
 	for _, fn := range opt {
 		fn(p)
 	}
 
 	if p.jid == "" {
-		p.jid = generateJID()
+		p.jid, err = generateUUID()
 	}
+	return
 }
 
 type putOptionFn func(d *putData)
@@ -163,7 +164,9 @@ func WithInterval(v float32) putOptionFn {
 // Put enqueues a job to the named queue
 func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string, error) {
 	pd := newPutData()
-	pd.setOptions(opt)
+	if err := pd.setOptions(opt); err != nil {
+		return "", err
+	}
 	args := []interface{}{"put", timestamp(), "", q.name, pd.jid, class, marshal(data), pd.delay}
 	args = append(args, pd.args...)
 
@@ -173,7 +176,9 @@ func (q *queue) Put(class string, data interface{}, opt ...putOptionFn) (string,
 // Put enqueues a job to the named queue
 func (q *queue) PutOrReplace(class string, jid string, data interface{}, opt ...putOptionFn) (int64, error) {
 	pd := newPutData()
-	pd.setOptions(opt)
+	if err := pd.setOptions(opt); err != nil {
+		return -1, err
+	}
 	args := []interface{}{"put", timestamp(), "", q.name, jid, class, marshal(data), pd.delay}
 	args = append(args, pd.args...)
 	args = append(args, "replace", 0)
@@ -192,7 +197,9 @@ func (q *queue) PutOrReplace(class string, jid string, data interface{}, opt ...
 
 func (q *queue) Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error) {
 	pd := newPutData()
-	pd.setOptions(opt)
+	if err := pd.setOptions(opt); err != nil {
+		return "", err
+	}
 
 	args := []interface{}{"recur", timestamp(), "on", q.name, pd.jid, class, marshal(data), "interval", interval, pd.delay}
 	args = append(args, pd.args...)
