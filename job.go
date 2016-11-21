@@ -32,7 +32,7 @@ type Job interface {
 
 	// operations
 	Heartbeat() (bool, error)
-	Fail(typ, message string) (bool, error)
+	Fail(group, message string) (bool, error)
 	Complete() (string, error)
 	CompleteWithNoData() (string, error)
 	HeartbeatWithNoData() (bool, error)
@@ -120,8 +120,8 @@ func (j *job) Move(queueName string) (string, error) {
 }
 
 // Fail this job
-func (j *job) Fail(typ, message string) (bool, error) {
-	return Bool(j.c.Do("fail", timestamp(), j.d.JID, j.d.Worker, typ, message, []byte(j.d.Data)))
+func (j *job) Fail(group, message string) (bool, error) {
+	return Bool(j.c.Do("fail", timestamp(), j.d.JID, j.d.Worker, group, message, []byte(j.d.Data)))
 }
 
 // Heartbeats this job

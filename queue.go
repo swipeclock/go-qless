@@ -1,6 +1,8 @@
 package qless
 
 import (
+	"time"
+
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -17,6 +19,7 @@ type Queue interface {
 	Pop(count int) ([]Job, error)
 	Recur(class string, data interface{}, interval int, opt ...putOptionFn) (string, error)
 	Len() (int64, error)
+	Stats(time.Time) (*QueueStatistics, error)
 }
 
 type queue struct {
@@ -241,4 +244,15 @@ func (q *queue) Len() (int64, error) {
 		return -1, err
 	}
 	return reply, nil
+}
+
+func (q *queue) Stats(d time.Time) (*QueueStatistics, error) {
+	data, err := redis.Bytes(q.c.Do("stats", timestamp(), q.name, d.Unix()))
+	if err != nil {
+		return nil, err
+	}
+
+	var qs QueueStatistics
+	err = unmarshal(data, &qs)
+	return &qs, err
 }

@@ -16,11 +16,7 @@ type RecurringJob struct {
 	Klass    string
 	Priority int
 
-	cli *Client
-}
-
-func NewRecurringJob(cli *Client) *RecurringJob {
-	return &RecurringJob{cli: cli}
+	c *Client
 }
 
 func (r *RecurringJob) Update(opts map[string]interface{}) {
@@ -40,21 +36,21 @@ func (r *RecurringJob) Update(opts map[string]interface{}) {
 		}
 	}
 
-	r.cli.Do(args...)
+	r.c.Do(args...)
 }
 
 func (r *RecurringJob) Cancel() {
-	r.cli.Do("recur", timestamp(), "off", r.Jid)
+	r.c.Do("recur", timestamp(), "off", r.Jid)
 }
 
 func (r *RecurringJob) Tag(tags ...interface{}) {
 	args := []interface{}{"recur", timestamp(), "tag", r.Jid}
 	args = append(args, tags...)
-	r.cli.Do(args...)
+	r.c.Do(args...)
 }
 
 func (r *RecurringJob) Untag(tags ...interface{}) {
 	args := []interface{}{"recur", timestamp(), "untag", r.Jid}
 	args = append(args, tags...)
-	r.cli.Do(args...)
+	r.c.Do(args...)
 }

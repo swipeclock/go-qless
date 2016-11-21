@@ -136,7 +136,7 @@ func (c *Client) GetRecurringJob(jid string) (*RecurringJob, error) {
 		return nil, err
 	}
 
-	job := NewRecurringJob(c)
+	job := &RecurringJob{c: c}
 	err = unmarshal(data, job)
 	if err != nil {
 		return nil, err

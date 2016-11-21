@@ -49,3 +49,20 @@ type Failure struct {
 	When    int64  `json:"when"`
 	Worker  string `json:"worker"`
 }
+
+//easyjson:json
+type StatData struct {
+	Count     int64   `json:"count"`
+	Histogram []int64 `json:"histogram"`
+	Mean      float64 `json:"mean"`
+	Std       float64 `json:"std"`
+}
+
+//easyjson:json
+type QueueStatistics struct {
+	Failed   int64    `json:"failed"`
+	Failures int64    `json:"failures"`
+	Retries  int64    `json:"retries"`
+	Run      StatData `json:"run"`
+	Wait     StatData `json:"wait"`
+}
