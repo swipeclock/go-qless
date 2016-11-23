@@ -3,8 +3,6 @@ package qless
 import (
 	"sync"
 
-	"fmt"
-
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -82,10 +80,7 @@ func (e *Events) Close() {
 }
 
 func (e *Events) run(psc redis.PubSubConn) {
-	fmt.Println("starting loop")
-
 	defer func() {
-		fmt.Println("exiting loop")
 		e.Close()
 	}()
 
