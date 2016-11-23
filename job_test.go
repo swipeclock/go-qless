@@ -3,8 +3,12 @@ package qless
 import (
 	"testing"
 
+	"fmt"
+
 	"github.com/stretchr/testify/assert"
 )
+
+var _ = fmt.Println
 
 func TestJob_HeartbeatForInvalidReturnsError(t *testing.T) {
 	c := newClientFlush()
@@ -122,4 +126,41 @@ func TestJob_Cancel(t *testing.T) {
 	j1, err = q.PopOne()
 	assert.NoError(t, err)
 	assert.Nil(t, j1)
+}
+
+func TestJob_UnmarshalDataOfStruct(t *testing.T) {
+
+	type testData struct {
+		String      string
+		Int         int
+		StringArray []string
+	}
+
+	inData := testData{String: "a string", Int: 0xbadf00d, StringArray: []string{"the", "fox"}}
+	c := newClientFlush()
+	q := c.Queue("test_queue")
+	q.Put("class", inData, WithJID("jobTestDEF"))
+	workerNameStr = "worker-1"
+	j1, err := q.PopOne()
+	assert.NoError(t, err)
+
+	var outData testData
+	err = j1.UnmarshalData(&outData)
+	assert.NoError(t, err)
+	assert.Equal(t, inData, outData)
+}
+
+func TestJob_UnmarshalDataOfString(t *testing.T) {
+	inData := "foo bar"
+	c := newClientFlush()
+	q := c.Queue("test_queue")
+	q.Put("class", inData, WithJID("jobTestDEF"))
+	workerNameStr = "worker-1"
+	j1, err := q.PopOne()
+	assert.NoError(t, err)
+
+	var outData string
+	err = j1.UnmarshalData(&outData)
+	assert.NoError(t, err)
+	assert.Equal(t, inData, outData)
 }

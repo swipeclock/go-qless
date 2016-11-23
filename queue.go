@@ -231,7 +231,7 @@ func (q *queue) Pop(count int) ([]Job, error) {
 		return nil, nil
 	}
 
-	var jobsData []jobData
+	var jobsData jobDataArray
 	err = unmarshal(data, &jobsData)
 	if err != nil {
 		return nil, err

@@ -23,7 +23,8 @@ type Job interface {
 	TTL() int64
 	Retries() int
 	Remaining() int
-	Data() []byte
+	Data() string
+	UnmarshalData(v interface{}) error
 	Tags() []string
 	History() []History
 	Failure() *Failure
@@ -90,8 +91,12 @@ func (j *job) Remaining() int {
 	return j.d.Remaining
 }
 
-func (j *job) Data() []byte {
+func (j *job) Data() string {
 	return j.d.Data
+}
+
+func (j *job) UnmarshalData(v interface{}) error {
+	return unmarshal([]byte(j.d.Data), v)
 }
 
 func (j *job) Tags() []string {
