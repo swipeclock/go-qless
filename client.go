@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"time"
+
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -14,39 +16,126 @@ type TaggedReply struct {
 }
 
 type Client struct {
-	conn redis.Conn
-	host string
-	port string
-	db   int
-
+	pool   *redis.Pool
+	own    bool
 	events *Events
 	lua    *redis.Script
 }
 
-func Dial(host, port string, db int) (*Client, error) {
-	conn, err := redis.Dial("tcp", fmt.Sprintf("%s:%s", host, port), redis.DialDatabase(db))
-	if err != nil {
-		return nil, err
+type dialOptions struct {
+	db              int
+	maxIdle         int
+	idleTimeout     time.Duration
+	maxActive       int
+	minPingInterval time.Duration
+	connectTimeout  time.Duration
+}
+
+type dialOptionFn func(o *dialOptions)
+
+// DialDatabase specifies the database to select when establishing a new
+// connection
+func DialDatabase(v int) dialOptionFn {
+	return func(o *dialOptions) {
+		o.db = v
+	}
+}
+
+// DialMaxIdle specifies the maximum number of idle connections in the pool
+func DialMaxIdle(v int) dialOptionFn {
+	return func(o *dialOptions) {
+		o.maxIdle = v
+	}
+}
+
+func DialIdleTimeout(v time.Duration) dialOptionFn {
+	return func(o *dialOptions) {
+		o.idleTimeout = v
+	}
+}
+
+func DialMaxActive(v int) dialOptionFn {
+	return func(o *dialOptions) {
+		o.maxActive = v
+	}
+}
+
+func DialMinPingInterval(v time.Duration) dialOptionFn {
+	return func(o *dialOptions) {
+		o.minPingInterval = v
+	}
+}
+
+func DialConnectTimeout(v time.Duration) dialOptionFn {
+	return func(o *dialOptions) {
+		o.connectTimeout = v
+	}
+}
+
+func NewClient(pool *redis.Pool) *Client {
+	return &Client{
+		pool: pool,
+		lua:  redis.NewScript(0, qlessLua),
+	}
+}
+
+func Dial(host, port string, opts ...dialOptionFn) (*Client, error) {
+	opt := &dialOptions{connectTimeout: time.Second, minPingInterval: time.Minute, idleTimeout: 30 * time.Minute}
+	for _, fn := range opts {
+		fn(opt)
+	}
+
+	addr := fmt.Sprintf("%s:%s", host, port)
+
+	pool := &redis.Pool{
+		MaxIdle:     opt.maxIdle,
+		MaxActive:   opt.maxActive,
+		IdleTimeout: opt.idleTimeout,
+
+		Dial: func() (redis.Conn, error) {
+			cn, err := redis.Dial("tcp", addr,
+				redis.DialConnectTimeout(opt.connectTimeout),
+				redis.DialDatabase(opt.db),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return cn, nil
+		},
+
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			if time.Since(t) < opt.minPingInterval {
+				return nil
+			}
+
+			_, err := c.Do("PING")
+			return err
+		},
 	}
 
 	return &Client{
-		host: host,
-		port: port,
-		db:   db,
+		pool: pool,
+		own:  true,
 		lua:  redis.NewScript(0, qlessLua),
-		conn: conn,
 	}, nil
 }
 
 func (c *Client) Close() {
-	c.conn.Close()
+	if c.events != nil {
+		c.events.Close()
+	}
+
+	if c.own && c.pool != nil {
+		c.pool.Close()
+		c.pool = nil
+	}
 }
 
 func (c *Client) Events() *Events {
 	if c.events != nil {
 		return c.events
 	}
-	c.events = NewEvents(c.host, c.port, c.db)
+	c.events = &Events{pool: c.pool}
 	return c.events
 }
 
@@ -55,7 +144,9 @@ func scriptReply(reply interface{}, err error) (interface{}, error) {
 }
 
 func (c *Client) Do(args ...interface{}) (interface{}, error) {
-	return scriptReply(c.lua.Do(c.conn, args...))
+	cn := c.pool.Get()
+	defer cn.Close()
+	return scriptReply(c.lua.Do(cn, args...))
 }
 
 func (c *Client) Queue(name string) Queue {

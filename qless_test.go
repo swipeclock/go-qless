@@ -31,7 +31,7 @@ func init() {
 }
 
 func newClient() *Client {
-	c, err := Dial(redisHost, redisPort, redisDB)
+	c, err := Dial(redisHost, redisPort, DialDatabase(redisDB))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -40,12 +40,14 @@ func newClient() *Client {
 }
 
 func newClientFlush() *Client {
-	c, err := Dial(redisHost, redisPort, redisDB)
+	c, err := Dial(redisHost, redisPort, DialDatabase(redisDB))
 	if err != nil {
 		panic(err.Error())
 	}
+	cn := c.pool.Get()
+	defer cn.Close()
 
-	c.conn.Do("FLUSHDB")
+	cn.Do("FLUSHDB")
 
 	return c
 }
@@ -53,7 +55,10 @@ func newClientFlush() *Client {
 func flushDB() {
 	c := newClient()
 	defer c.Close()
-	c.conn.Do("FLUSHDB")
+	cn := c.pool.Get()
+	defer cn.Close()
+
+	cn.Do("FLUSHDB")
 }
 
 func TestMain(m *testing.M) {

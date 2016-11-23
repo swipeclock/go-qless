@@ -11,7 +11,9 @@ func TestResource_SetMax(t *testing.T) {
 	c := newClientFlush()
 	r := &resource{c, "test"}
 	r.SetMax(10)
-	m, err := redis.StringMap(c.conn.Do("HGETALL", "ql:rs:test"))
+	cn := c.pool.Get()
+	defer cn.Close()
+	m, err := redis.StringMap(cn.Do("HGETALL", "ql:rs:test"))
 	assert.NoError(t, err)
 	assert.Equal(t, "10", m["max"])
 }
@@ -46,13 +48,16 @@ func TestResource_Delete(t *testing.T) {
 	c := newClientFlush()
 	r := &resource{c, "test"}
 	r.SetMax(10)
-	v, _ := redis.Bool(c.conn.Do("EXISTS", "ql:rs:test"))
+	cn := c.pool.Get()
+	defer cn.Close()
+
+	v, _ := redis.Bool(cn.Do("EXISTS", "ql:rs:test"))
 	assert.True(t, v)
 
 	err := r.Delete()
 	assert.NoError(t, err)
 
-	v, _ = redis.Bool(c.conn.Do("EXISTS", "ql:rs:test"))
+	v, _ = redis.Bool(cn.Do("EXISTS", "ql:rs:test"))
 	assert.False(t, v)
 }
 
