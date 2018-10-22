@@ -26,3 +26,6 @@ _testmain.go
 *.prof
 
 .gitignore
+
+# IDE
+/.idea
