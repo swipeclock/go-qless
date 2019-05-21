@@ -1,4 +1,4 @@
--- Current SHA: 9d2cca3846a96fee53000085e36638e74ed392ed
+-- Current SHA: 7d9581f512cd18ffe95e6885bc900e92301f1b9e
 -- This is a generated file
 local Qless = {
   ns = 'ql:'
@@ -23,7 +23,7 @@ local QlessRecurringJob = {}
 QlessRecurringJob.__index = QlessRecurringJob
 
 local QlessResource = {
-  ns = Qless.ns .. 'rs:'
+    ns = Qless.ns .. 'rs:'
 }
 QlessResource.__index = QlessResource;
 
@@ -305,37 +305,6 @@ function Qless.cancel(now, ...)
   return cancelled_jids
 end
 
-local Set = {}
-
-function Set.new (t)
-  local set = {}
-  for _, l in ipairs(t) do set[l] = true end
-  return set
-end
-
-function Set.union (a,b)
-  local res = Set.new{}
-  for k in pairs(a) do res[k] = true end
-  for k in pairs(b) do res[k] = true end
-  return res
-end
-
-function Set.intersection (a,b)
-  local res = Set.new{}
-  for k in pairs(a) do
-    res[k] = b[k]
-  end
-  return res
-end
-
-function Set.diff(a,b)
-  local res = Set.new{}
-  for k in pairs(a) do
-    if not b[k] then res[k] = true end
-  end
-
-  return res
-end
 
 Qless.config.defaults = {
   ['application']        = 'qless',
@@ -386,34 +355,33 @@ function QlessJob:data(...)
   local job = redis.call(
       'hmget', QlessJob.ns .. self.jid, 'jid', 'klass', 'state', 'queue',
       'worker', 'priority', 'expires', 'retries', 'remaining', 'data',
-      'tags', 'failure', 'resources', 'result_data', 'throttle_interval')
+      'tags', 'failure', 'spawned_from_jid', 'resources')
 
   if not job[1] then
     return nil
   end
 
   local data = {
-    jid          = job[1],
-    klass        = job[2],
-    state        = job[3],
-    queue        = job[4],
-    worker       = job[5] or '',
-    tracked      = redis.call(
+    jid              = job[1],
+    klass            = job[2],
+    state            = job[3],
+    queue            = job[4],
+    worker           = job[5] or '',
+    tracked          = redis.call(
       'zscore', 'ql:tracked', self.jid) ~= false,
-    priority     = tonumber(job[6]),
-    expires      = tonumber(job[7]) or 0,
-    retries      = tonumber(job[8]),
-    remaining    = math.floor(tonumber(job[9])),
-    data         = job[10],
-    tags         = cjson.decode(job[11]),
-    history      = self:history(),
-    failure      = cjson.decode(job[12] or '{}'),
-    resources    = cjson.decode(job[13] or '[]'),
-    result_data  = cjson.decode(job[14] or '{}'),
-    interval     = tonumber(job[15]) or 0,
-    dependents   = redis.call(
+    priority         = tonumber(job[6]),
+    expires          = tonumber(job[7]) or 0,
+    retries          = tonumber(job[8]),
+    remaining        = math.floor(tonumber(job[9])),
+    data             = job[10],
+    tags             = cjson.decode(job[11]),
+    history          = self:history(),
+    failure          = cjson.decode(job[12] or '{}'),
+    spawned_from_jid = job[13],
+    resources    = cjson.decode(job[14] or '[]'),
+    dependents       = redis.call(
       'smembers', QlessJob.ns .. self.jid .. '-dependents'),
-    dependencies = redis.call(
+    dependencies     = redis.call(
       'smembers', QlessJob.ns .. self.jid .. '-dependencies')
   }
 
@@ -437,10 +405,9 @@ function QlessJob:complete(now, worker, queue, raw_data, ...)
   local options = {}
   for i = 1, #arg, 2 do options[arg[i]] = arg[i + 1] end
 
-  local nextq       = options['next']
-  local result_data = options['result_data']
-  local delay       = assert(tonumber(options['delay'] or 0))
-  local depends     = assert(cjson.decode(options['depends'] or '[]'),
+  local nextq   = options['next']
+  local delay   = assert(tonumber(options['delay'] or 0))
+  local depends = assert(cjson.decode(options['depends'] or '[]'),
     'Complete(): Arg "depends" not JSON: ' .. tostring(options['depends']))
 
   if options['delay'] and nextq == nil then
@@ -453,9 +420,9 @@ function QlessJob:complete(now, worker, queue, raw_data, ...)
 
   local bin = now - (now % 86400)
 
-  local lastworker, state, priority, retries, interval = unpack(
+  local lastworker, state, priority, retries, current_queue = unpack(
     redis.call('hmget', QlessJob.ns .. self.jid, 'worker', 'state',
-      'priority', 'retries', 'throttle_interval'))
+      'priority', 'retries', 'queue'))
 
   if lastworker == false then
     error('Complete(): Job ' .. self.jid .. ' does not exist')
@@ -465,26 +432,15 @@ function QlessJob:complete(now, worker, queue, raw_data, ...)
   elseif lastworker ~= worker then
     error('Complete(): Job ' .. self.jid ..
       ' has been handed out to another worker: ' .. tostring(lastworker))
-  end
-
-  local next_run = 0
-  if interval then
-    interval = tonumber(interval)
-    if interval > 0 then
-      next_run = now + interval
-    else
-      next_run = -1
-    end
+  elseif queue ~= current_queue then
+    error('Complete(): Job ' .. self.jid .. ' running in another queue: ' ..
+      tostring(current_queue))
   end
 
   self:history(now, 'done')
 
   if raw_data then
     redis.call('hset', QlessJob.ns .. self.jid, 'data', raw_data)
-  end
-
-  if result_data then
-    redis.call('hset', QlessJob.ns .. self.jid, 'result_data', result_data)
   end
 
   local queue_obj = Qless.queue(queue)
@@ -573,9 +529,7 @@ function QlessJob:complete(now, worker, queue, raw_data, ...)
       'failure', '{}',
       'queue', '',
       'expires', 0,
-      'remaining', tonumber(retries),
-      'throttle_next_run', next_run
-    )
+      'remaining', tonumber(retries))
 
     local count = Qless.config.get('jobs-history-count')
     local time  = Qless.config.get('jobs-history')
@@ -656,9 +610,9 @@ function QlessJob:fail(now, worker, group, message, data)
     'hmget', QlessJob.ns .. self.jid, 'queue', 'state', 'worker'))
 
   if not state then
-    error('Fail(): Job ' .. self.jid .. ' does not exist')
+    error('Fail(): Job ' .. self.jid .. 'does not exist')
   elseif state ~= 'running' then
-    error('Fail(): Job ' .. self.jid .. ' not currently running: ' .. state)
+    error('Fail(): Job ' .. self.jid .. 'not currently running: ' .. state)
   elseif worker ~= oldworker then
     error('Fail(): Job ' .. self.jid .. ' running with another worker: ' ..
       oldworker)
@@ -897,9 +851,21 @@ function QlessJob:heartbeat(now, worker, data)
 
     redis.call('zadd', 'ql:w:' .. worker .. ':jobs', expires, self.jid)
 
+    redis.call('zadd', 'ql:workers', now, worker)
+
     local queue = Qless.queue(
       redis.call('hget', QlessJob.ns .. self.jid, 'queue'))
     queue.locks.add(expires, self.jid)
+
+    local encoded = cjson.encode({
+      jid    = self.jid,
+      event  = 'heartbeat',
+      expires = expires,
+      worker = worker
+    })
+    Qless.publish('w:' .. worker, encoded)
+    Qless.publish('log', encoded)
+
     return expires
   end
 end
@@ -1034,73 +1000,10 @@ function QlessJob:acquire_resources(now)
   end
 
   local acquired_all = true
-
   for _, res in ipairs(resources) do
-    local ok, res = pcall(function() return Qless.resource(res):acquire(now, priority, self.jid) end)
-    if not ok then
-      self:set_failed(now, 'system:fatal', res.msg)
-      return false
-    end
-    acquired_all = acquired_all and res
+    acquired_all = acquired_all and Qless.resource(res):acquire(now, priority, self.jid)
   end
-
   return acquired_all
-end
-
-function QlessJob:set_failed(now, group, message, worker, release_work, release_resources)
-  local group             = assert(group, 'Fail(): Arg "group" missing')
-  local message           = assert(message, 'Fail(): Arg "message" missing')
-  local worker            = worker or 'none'
-  local release_work      = release_work or true
-  local release_resources = release_resources or false
-
-  local bin = now - (now % 86400)
-
-  local queue = unpack(redis.call('hmget', QlessJob.ns .. self.jid, 'queue'))
-
-  Qless.publish('log', cjson.encode({
-    jid     = self.jid,
-    event   = 'failed',
-    worker  = worker,
-    group   = group,
-    message = message
-  }))
-
-  if redis.call('zscore', 'ql:tracked', self.jid) ~= false then
-    Qless.publish('failed', self.jid)
-  end
-
-  self:history(now, 'failed', {group = group})
-
-  redis.call('hincrby', 'ql:s:stats:' .. bin .. ':' .. queue, 'failures', 1)
-  redis.call('hincrby', 'ql:s:stats:' .. bin .. ':' .. queue, 'failed'  , 1)
-
-  if release_work then
-    local queue_obj = Qless.queue(queue)
-    queue_obj.work.remove(self.jid)
-    queue_obj.locks.remove(self.jid)
-    queue_obj.scheduled.remove(self.jid)
-  end
-
-  if release_resources then
-    self:release_resources(now)
-  end
-
-  redis.call('hmset', QlessJob.ns .. self.jid,
-    'state', 'failed',
-    'worker', '',
-    'expires', '',
-    'failure', cjson.encode({
-      ['group']   = group,
-      ['message'] = message,
-      ['when']    = math.floor(now)
-    }))
-
-  redis.call('sadd', 'ql:failures', group)
-  redis.call('lpush', 'ql:f:' .. group, self.jid)
-
-
-  return self.jid
 end
 function Qless.queue(name)
   assert(name, 'Queue(): no queue name provided')
@@ -1367,6 +1270,13 @@ function QlessQueue:pop(now, worker, count)
     if tracked then
       Qless.publish('popped', jid)
     end
+
+    local throttle = tonumber(
+      Qless.config.get(self.name .. '-throttle', 0))
+    if throttle > 0 then
+      redis.call('set', QlessQueue.ns .. self.name .. ':ttl:' .. jid, throttle)
+      redis.call('expire', QlessQueue.ns .. self.name .. ':ttl:' .. jid, throttle)
+    end
   end
 
   self.work.remove(unpack(jids))
@@ -1421,11 +1331,9 @@ function QlessQueue:put(now, worker, jid, klass, raw_data, delay, ...)
   for i = 1, #arg, 2 do options[arg[i]] = arg[i + 1] end
 
   local job = Qless.job(jid)
-  local priority, tags, oldqueue, state, failure, retries, oldworker, interval, next_run, old_resources =
+  local priority, tags, oldqueue, state, failure, retries, oldworker =
     unpack(redis.call('hmget', QlessJob.ns .. jid, 'priority', 'tags',
-      'queue', 'state', 'failure', 'retries', 'worker', 'throttle_interval', 'throttle_next_run', 'resources'))
-
-  next_run = next_run or now
+      'queue', 'state', 'failure', 'retries', 'worker'))
 
   local replace = assert(tonumber(options['replace'] or 1) ,
     'Put(): Arg "replace" not a number: ' .. tostring(options['replace']))
@@ -1449,32 +1357,8 @@ function QlessQueue:put(now, worker, jid, klass, raw_data, delay, ...)
     'Put(): Arg "priority" not a number'  .. tostring(options['priority']))
   local depends = assert(cjson.decode(options['depends'] or '[]') ,
     'Put(): Arg "depends" not JSON: '     .. tostring(options['depends']))
-
   local resources = assert(cjson.decode(options['resources'] or '[]'),
     'Put(): Arg "resources" not JSON array: '     .. tostring(options['resources']))
-  assert(#resources == 0 or QlessResource.all_exist(resources), 'Put(): invalid resources requested')
-
-  if old_resources then
-    old_resources = Set.new(cjson.decode(old_resources))
-    local removed_resources = Set.diff(old_resources, Set.new(resources))
-    for k in pairs(removed_resources) do
-      Qless.resource(k):release(now, jid)
-    end
-  end
-
-  local interval = assert(tonumber(options['interval'] or interval or 0),
-    'Put(): Arg "interval" not a number: ' .. tostring(options['interval']))
-
-  if interval > 0 then
-    local minimum_delay = next_run - now
-    if minimum_delay < 0 then
-      minimum_delay = 0
-    elseif minimum_delay > delay then
-      delay = minimum_delay
-    end
-  else
-    next_run = 0
-  end
 
   if #depends > 0 then
     local new = {}
@@ -1538,6 +1422,8 @@ function QlessQueue:put(now, worker, jid, klass, raw_data, delay, ...)
     redis.call('hincrby', 'ql:s:stats:' .. bin .. ':' .. self.name, 'failed'  , -1)
   end
 
+  local throttle = tonumber(redis.call('ttl', QlessQueue.ns .. self.name .. ':ttl:' .. jid))
+
   redis.call('hmset', QlessJob.ns .. jid,
     'jid'      , jid,
     'klass'    , klass,
@@ -1551,10 +1437,7 @@ function QlessQueue:put(now, worker, jid, klass, raw_data, delay, ...)
     'queue'    , self.name,
     'retries'  , retries,
     'remaining', retries,
-    'throttle_interval', interval,
-    'throttle_next_run', next_run,
-    'time'     , string.format("%.20f", now),
-    'result_data', '{}')
+    'time'     , string.format("%.20f", now))
 
   for i, j in ipairs(depends) do
     local state = redis.call('hget', QlessJob.ns .. j, 'state')
@@ -1564,14 +1447,14 @@ function QlessQueue:put(now, worker, jid, klass, raw_data, delay, ...)
     end
   end
 
-  if delay > 0 then
+  if delay > 0 or throttle > 0 then
     if redis.call('scard', QlessJob.ns .. jid .. '-dependencies') > 0 then
       self.depends.add(now, jid)
       redis.call('hmset', QlessJob.ns .. jid,
         'state', 'depends',
-        'scheduled', now + delay)
+        'scheduled', now + math.max(delay, throttle))
     else
-      self.scheduled.add(now + delay, jid)
+      self.scheduled.add(now + math.max(delay, throttle), jid)
     end
   else
     if redis.call('scard', QlessJob.ns .. jid .. '-dependencies') > 0 then
@@ -1678,18 +1561,18 @@ function QlessQueue:recur(now, jid, klass, raw_data, spec, ...)
     end
 
     redis.call('hmset', 'ql:r:' .. jid,
-      'jid'      , jid,
-      'klass'    , klass,
-      'data'     , raw_data,
-      'priority' , options.priority,
-      'tags'     , cjson.encode(options.tags or {}),
-      'state'    , 'recur',
-      'queue'    , self.name,
-      'type'     , 'interval',
-      'count'    , count,
-      'interval' , interval,
-      'retries'  , options.retries,
-      'backlog'  , options.backlog,
+      'jid'     , jid,
+      'klass'   , klass,
+      'data'    , raw_data,
+      'priority', options.priority,
+      'tags'    , cjson.encode(options.tags or {}),
+      'state'   , 'recur',
+      'queue'   , self.name,
+      'type'    , 'interval',
+      'count'   , count,
+      'interval', interval,
+      'retries' , options.retries,
+      'backlog' , options.backlog,
       'resources', cjson.encode(options.resources))
     self.recurring.add(now + offset, jid)
 
@@ -1741,23 +1624,24 @@ function QlessQueue:check_recurring(now, count)
       end
 
       redis.call('hmset', QlessJob.ns .. child_jid,
-        'jid'              , child_jid,
-        'klass'            , klass,
-        'data'             , data,
-        'priority'         , priority,
-        'tags'             , tags,
-        'state'            , 'waiting',
-        'worker'           , '',
-        'expires'          , 0,
-        'queue'            , self.name,
-        'retries'          , retries,
-        'remaining'        , retries,
-        'resources'        , cjson.encode(resources),
-        'throttle_interval', 0,
-        'time'             , string.format("%.20f", score))
+        'jid'             , child_jid,
+        'klass'           , klass,
+        'data'            , data,
+        'priority'        , priority,
+        'tags'            , tags,
+        'state'           , 'waiting',
+        'worker'          , '',
+        'expires'         , 0,
+        'queue'           , self.name,
+        'retries'         , retries,
+        'remaining'       , retries,
+        'time'            , string.format("%.20f", score),
+        'spawned_from_jid', jid,
+        'resources', cjson.encode(resources))
 
       local job = Qless.job(child_jid)
       job:history(score, 'put', {q = self.name})
+
 
       local add_job = true
       if #resources then
@@ -1916,7 +1800,7 @@ end
 function QlessRecurringJob:data()
   local job = redis.call(
     'hmget', 'ql:r:' .. self.jid, 'jid', 'klass', 'state', 'queue',
-    'priority', 'interval', 'retries', 'count', 'data', 'tags', 'backlog')
+    'priority', 'interval', 'retries', 'count', 'data', 'tags', 'backlog', 'resources')
 
   if not job[1] then
     return nil
@@ -1933,7 +1817,8 @@ function QlessRecurringJob:data()
     count        = tonumber(job[8]),
     data         = job[9],
     tags         = cjson.decode(job[10]),
-    backlog      = tonumber(job[11] or 0)
+    backlog      = tonumber(job[11] or 0),
+    resources    = tonumber(job[12] or '[]')
   }
 end
 
@@ -2060,7 +1945,7 @@ end
 
 function QlessResource:data(...)
   local res = redis.call(
-    'hmget', QlessResource.ns .. self.rid, 'rid', 'max')
+      'hmget', QlessResource.ns .. self.rid, 'rid', 'max')
 
   if not res[1] then
     return nil
@@ -2069,64 +1954,67 @@ function QlessResource:data(...)
   local data = {
     rid          = res[1],
     max          = tonumber(res[2] or 0),
-    pending      = self:pending(),
-    locks        = self:locks(),
+    pending      = redis.call('zrevrange', self:prefix('pending'), 0, -1),
+    locks        = redis.call('smembers', self:prefix('locks')),
   }
 
   return data
 end
 
-function QlessResource:get(...)
-  local res = redis.call(
-    'hmget', QlessResource.ns .. self.rid, 'rid', 'max')
+function QlessResource:counts(now, rid)
+  if rid then
+    local resource = redis.call(
+      'hmget', QlessResource.ns .. rid, 'rid', 'max')
 
-  if not res[1] then
-    return nil
+    if not resource[1] then
+      return nil
+    end
+
+    local pending = redis.call('zrevrange', QlessResource.ns .. rid .. '-' .. 'pending', 0, -1)
+    local pcount = 0
+    for _, _ in pairs(pending) do
+      pcount = pcount + 1
+    end
+
+    local locks = redis.call('smembers', QlessResource.ns .. rid .. '-' .. 'locks')
+    local lcount = 0
+    for _, _ in pairs(locks) do
+      lcount = lcount + 1
+    end
+
+    return {
+      rid          = resource[1],
+      max          = tonumber(resource[2] or 0),
+      pending      = tonumber(pcount or 0),
+      locks        = tonumber(lcount or 0)
+    }
+  else
+    local resources = redis.call('smembers', 'ql:resources')
+    local response = {}
+    for _, rname in ipairs(resources) do
+      local c = QlessResource:counts(now, rname)
+      response[rname] = {
+        max        = c.max,
+        pending    = c.pending,
+        locks      = c.locks
+      }
+    end
+
+    return response
   end
-
-  return tonumber(res[2] or 0)
 end
 
-function QlessResource:set(now, max)
+function QlessResource:set(max)
   local max = assert(tonumber(max), 'Set(): Arg "max" not a number: ' .. tostring(max))
 
-  local current_max = self:get()
-  if current_max == nil then
-    current_max = max
-  end
-
-  local keyLocks = self:prefix('locks')
-  local current_locks = redis.pcall('scard', keyLocks)
-  local confirm_limit = math.max(current_max,current_locks)
-  local max_change = max - confirm_limit
-  local keyPending = self:prefix('pending')
-
+  redis.call('sadd', 'ql:resources', self.rid)
   redis.call('hmset', QlessResource.ns .. self.rid, 'rid', self.rid, 'max', max);
-
-  if max_change > 0 then
-    local jids = redis.call('zrevrange', keyPending, 0, max_change - 1, 'withscores')
-    local jid_count = #jids
-    if jid_count == 0 then
-      return self.rid
-    end
-
-    for i = 1, jid_count, 2 do
-
-      local newJid = jids[i]
-      local score = jids[i + 1]
-
-      if Qless.job(newJid):acquire_resources(now) then
-        local data = Qless.job(newJid):data()
-        local queue = Qless.queue(data['queue'])
-        queue.work.add(score, 0, newJid)
-      end
-    end
-  end
 
   return self.rid
 end
 
 function QlessResource:unset()
+  redis.call('srem', 'ql:resources', self.rid)
   return redis.call('del', QlessResource.ns .. self.rid);
 end
 
@@ -2140,30 +2028,24 @@ end
 
 function QlessResource:acquire(now, priority, jid)
   local keyLocks = self:prefix('locks')
-  local max = self:get()
-  if max == nil then
-    error({code=1, msg='Acquire(): resource ' .. self.rid .. ' does not exist'})
-  end
-
-  if type(jid) ~= 'string' then
-    error({code=2, msg='Acquire(): invalid jid; expected string, got \'' .. type(jid) .. '\''})
-  end
-
+  local data = self:data()
+  assert(data, 'Acquire(): resource ' .. self.rid .. ' does not exist')
+  assert(type(jid) ~= 'table', 'Acquire(): invalid jid')
 
   if redis.call('sismember', self:prefix('locks'), jid) == 1 then
     return true
   end
 
-  local remaining = max - redis.pcall('scard', keyLocks)
+  local remaining = data['max'] - redis.pcall('scard', keyLocks)
 
   if remaining > 0 then
     redis.call('sadd', keyLocks, jid)
     redis.call('zrem', self:prefix('pending'), jid)
-
     return true
   end
 
-  if redis.call('zscore', self:prefix('pending'), jid) == false then
+  local pending = redis.call('zscore', self:prefix('pending'), jid)
+  if pending == nil or pending == false then
     redis.call('zadd', self:prefix('pending'), priority - (now / 10000000000), jid)
   end
 
@@ -2187,70 +2069,20 @@ function QlessResource:release(now, jid)
 
   if Qless.job(newJid):acquire_resources(now) then
     local data = Qless.job(newJid):data()
-    local queue = Qless.queue(data['queue'])
-    queue.work.add(score, 0, newJid)
+    Qless.queue(data['queue']).work.add(score, 0, newJid)
   end
 
   return newJid
 end
 
 function QlessResource:locks()
-  return redis.call('smembers', self:prefix('locks'))
-end
-
-function QlessResource:lock_count()
   return redis.call('scard', self:prefix('locks'))
 end
 
-function QlessResource:pending()
-  return redis.call('zrevrange', self:prefix('pending'), 0, -1)
-end
-
-function QlessResource:pending_count()
-  return redis.call('zcard', self:prefix('pending'))
-end
-
 function QlessResource:exists()
-  return redis.call('exists', self:prefix()) == 1
-end
-
-function QlessResource.all_exist(resources)
-  for _, res in ipairs(resources) do
-    if redis.call('exists', QlessResource.ns .. res) == 0 then
-      return false
-    end
-  end
-  return true
-end
-
-function QlessResource.pending_counts(now)
-  local search = QlessResource.ns..'*-pending'
-  local reply = redis.call('keys', search)
-  local response = {}
-  for index, rname in ipairs(reply) do
-    local count = redis.call('zcard', rname)
-    local resStat = {name = rname, count = count}
-    table.insert(response,resStat)
-  end
-  return response
-end
-
-function QlessResource.locks_counts(now)
-  local search = QlessResource.ns..'*-locks'
-  local reply = redis.call('keys', search)
-  local response = {}
-  for index, rname in ipairs(reply) do
-    local count = redis.call('scard', rname)
-    local resStat = {name = rname, count = count}
-    table.insert(response,resStat)
-  end
-  return response
+  return redis.call('exists', self:prefix())
 end-------------------------------------------------------------------------------
 local QlessAPI = {}
-
-local function tonil(value)
-  if (value == '') then return nil else return value end
-end
 
 function QlessAPI.get(now, jid)
   local data = Qless.job(jid):data()
@@ -2269,7 +2101,6 @@ function QlessAPI.multiget(now, ...)
 end
 
 QlessAPI['config.get'] = function(now, key)
-  key = tonil(key)
   if not key then
     return cjson.encode(Qless.config.get(key))
   else
@@ -2278,12 +2109,10 @@ QlessAPI['config.get'] = function(now, key)
 end
 
 QlessAPI['config.set'] = function(now, key, value)
-  key = tonil(key)
   return Qless.config.set(key, value)
 end
 
 QlessAPI['config.unset'] = function(now, key)
-  key = tonil(key)
   return Qless.config.unset(key)
 end
 
@@ -2292,7 +2121,6 @@ QlessAPI.queues = function(now, queue)
 end
 
 QlessAPI.complete = function(now, jid, worker, queue, data, ...)
-  data = tonil(data)
   return Qless.job(jid):complete(now, worker, queue, data, unpack(arg))
 end
 
@@ -2301,7 +2129,6 @@ QlessAPI.failed = function(now, group, start, limit)
 end
 
 QlessAPI.fail = function(now, jid, worker, group, message, data)
-  data = tonil(data)
   return Qless.job(jid):fail(now, worker, group, message, data)
 end
 
@@ -2318,7 +2145,6 @@ QlessAPI.depends = function(now, jid, command, ...)
 end
 
 QlessAPI.heartbeat = function(now, jid, worker, data)
-  data = tonil(data)
   return Qless.job(jid):heartbeat(now, worker, data)
 end
 
@@ -2396,7 +2222,6 @@ QlessAPI.timeout = function(now, ...)
 end
 
 QlessAPI.put = function(now, me, queue, jid, klass, data, delay, ...)
-  data = tonil(data)
   return Qless.queue(queue):put(now, me, jid, klass, data, delay, unpack(arg))
 end
 
@@ -2411,7 +2236,6 @@ QlessAPI.unfail = function(now, queue, group, count)
 end
 
 QlessAPI.recur = function(now, queue, jid, klass, data, spec, ...)
-  data = tonil(data)
   return Qless.queue(queue):recur(now, jid, klass, data, spec, unpack(arg))
 end
 
@@ -2452,24 +2276,15 @@ QlessAPI['queue.forget'] = function(now, ...)
 end
 
 QlessAPI['resource.set'] = function(now, rid, max)
-  return Qless.resource(rid):set(now, max)
+  return Qless.resource(rid):set(max)
 end
 
 QlessAPI['resource.get'] = function(now, rid)
-  return Qless.resource(rid):get()
-end
-
-QlessAPI['resource.data'] = function(now, rid)
   local data = Qless.resource(rid):data()
   if not data then
     return nil
   end
-
   return cjson.encode(data)
-end
-
-QlessAPI['resource.exists'] = function(now, rid)
-  return Qless.resource(rid):exists()
 end
 
 QlessAPI['resource.unset'] = function(now, rid)
@@ -2477,38 +2292,11 @@ QlessAPI['resource.unset'] = function(now, rid)
 end
 
 QlessAPI['resource.locks'] = function(now, rid)
-  local data = Qless.resource(rid):locks()
-  if not data then
-    return nil
-  end
-
-  return cjson.encode(data)
+  return Qless.resource(rid):locks()
 end
 
-QlessAPI['resource.lock_count'] = function(now, rid)
-  return Qless.resource(rid):lock_count()
-end
-
-QlessAPI['resource.pending'] = function(now, rid)
-  local data = Qless.resource(rid):pending()
-  if not data then
-    return nil
-  end
-
-  return cjson.encode(data)
-
-end
-
-QlessAPI['resource.pending_count'] = function(now, rid)
-  return Qless.resource(rid):pending_count()
-end
-
-QlessAPI['resource.stats_pending'] = function(now)
-  return cjson.encode(QlessResource.pending_counts(now))
-end
-
-QlessAPI['resource.stats_locks'] = function(now)
-  return cjson.encode(QlessResource.locks_counts(now))
+QlessAPI['resources'] = function(now, rid)
+  return cjson.encode(QlessResource:counts(now, rid))
 end
 
 
